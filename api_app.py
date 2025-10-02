@@ -3,6 +3,7 @@ import re
 import json
 import time
 import hashlib
+from enum import Enum
 from typing import List, Dict, Any
 from fastapi import HTTPException, FastAPI, UploadFile, File, Form
 from pydantic import BaseModel
@@ -359,6 +360,13 @@ class ChatReq(BaseModel):
     k: int = 4
     model: str
 
+class BackendType(str, Enum):
+    API = "api"
+    OLLAMA = "ollama"
+
+class ModelBackend(BaseModel):
+    backend_type: BackendType
+
 # ---------------------------
 # Auth
 # ---------------------------
@@ -467,6 +475,29 @@ def root():
 @app.get("/health_check")
 def health_check():
     return {"status": "app is healthy"}
+
+@app.post("/set-model-backend")
+async def set_llm_backend_type(req: ModelBackend):
+    try:
+        global MODEL_BACKEND
+        MODEL_BACKEND = req.backend_type
+        return {"status": "ok"}
+    except HTTPException as e:
+        return {
+            "status": "Something went wrong."
+        }
+
+@app.get("/get-model-backend")
+async def get_llm_backend_type():
+    try:
+        global MODEL_BACKEND
+        return {
+            "current_backend": MODEL_BACKEND
+        }
+    except HTTPException as e:
+        return {
+            "status": "something went wrong."
+        }
 
 
 # if __name__ == "__main__":
