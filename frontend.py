@@ -491,7 +491,7 @@ def render_about_page():
 def main():
     """Main application function"""
     st.markdown(
-        '<div class="main-header" style="color: lightblue; font-family: sans-serif;">🏢 Terms & Conditions Policy Assistant</div>',
+        '<div class="main-header" style="color: lightblue; font-family: sans-serif;">🏢 HR Terms & Conditions Policy Assistant</div>',
         unsafe_allow_html=True
     )
 
@@ -523,7 +523,7 @@ def main():
     # Footer
     st.markdown("""
     <div class="footer">
-        <p>🔐 Secure RAG T&E Policy Assistant | Powered by FastAPI & Streamlit</p>
+        <p>🔐 Secure RAG T&C Policy Assistant | Powered by FastAPI & Streamlit</p>
         <p style="font-size: 0.8rem; color: #9ca3af;">
             All conversations are logged for compliance. Access is controlled by department permissions.
         </p>
