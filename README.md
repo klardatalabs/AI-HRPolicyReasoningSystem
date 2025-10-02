@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 # AI-HRPolicyResoningSystem
 Our AI work and open projects
 =======
@@ -272,3 +273,7 @@ Key Security Measures
     
 *   📝 **Audit logs** provide a full trace of all interactions.
 >>>>>>> 82f2bc9 (Initial commit)
+=======
+# AI-HRPolicyResoningSystem
+Our AI work and open projects
+>>>>>>> 625ce6cf4fd2c50e99d1ddd8b704e60a8673d3c9
