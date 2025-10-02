@@ -7,6 +7,11 @@ docker run -d -p 3000:8080 -v open-webui:/app/backend/data --name open-webui ghc
 
 # build docker image from dockerfile backend
 docker build -f Dockerfile.backend -t rishavm/tca-backend:latest .
+docker build -f Dockerfile.frontend -t rishavm/tca-frontend:latest .
+
+# push images to dockerhub
+docker push rishavm/tca-backend:latest
+docker push rishavm/tca-frontend:latest
 
 # run backend
 #uvicorn api_app2:app --reload --host 0.0.0.0 --port 8000

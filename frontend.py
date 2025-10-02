@@ -7,11 +7,11 @@ import json
 import requests
 
 # we can make this configurable later on
-LLM_MODEL = "gemma3:latest"
+LLM_MODEL = "mistral:latest"
 
 # Configure the page with professional settings
 st.set_page_config(
-    page_title="Terms & Conditions Policy Assistant",
+    page_title="HR Policy Reasoning System",
     page_icon="🏢",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -71,7 +71,7 @@ st.markdown("""
         background: black; /* Changed from linear-gradient */
         color: white;    /* Added for readability against a black background */
         padding: 1rem 1.5rem;
-        border-radius: 18px 18px 18px 4px;
+        border-radius: 22px 22px 22px 6px;
         margin: 0.5rem 0;
         border: 1px solid #bfdbfe;
         max-width: 85%;
@@ -87,7 +87,7 @@ st.markdown("""
         background: black;
         color: white;
         padding: 1rem 1.5rem;
-        border-radius: 18px 18px 18px 4px;
+        border-radius: 22px 22px 22px 6px;
         margin: 0.5rem 0;
         border: 1px solid #d1d5db;
         max-width: 85%;
