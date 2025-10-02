@@ -4,7 +4,7 @@ import json
 import time
 import hashlib
 from typing import List, Dict, Any
-from fastapi import HTTPException, FastAPI
+from fastapi import HTTPException, FastAPI, UploadFile, File, Form
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 import numpy as np
@@ -444,14 +444,12 @@ def chat(req: ChatReq):
 
 
 @app.post("/ingest")
-def ingest(req: IngestReq):
-    if not os.path.exists(req.path):
-        return JSONResponse(
-            status_code=200,
-            content={"error": "File Path not found"}
-        )
-    ingest_file(req.path, department=req.department)
-    return {"status": "ok"}
+async def ingest(file: UploadFile = File(...), department: str = Form(...)):
+    path = os.path.join(UPLOAD_DIR, file.filename)
+    with open(path, "wb") as f:
+        f.write(await file.read())
+    ingest_file(path, department)
+    return {"status": "ok", "file": file.filename}
 
 
 @app.get("/")
@@ -463,11 +461,11 @@ def health_check():
     return {"status": "app is healthy"}
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "api_app:app",
-        host="127.0.0.1",
-        port=8003,
-        reload=False             # enable iterative mode
-    )
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(
+#         "api_app:app",
+#         host="127.0.0.1",
+#         port=8003,
+#         reload=False             # enable iterative mode
+#     )

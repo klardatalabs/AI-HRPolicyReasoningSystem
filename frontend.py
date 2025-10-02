@@ -158,7 +158,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Backend API configuration
-# BACKEND_URL = os.getenv("BACKEND_URL", "http://192.168.1.3:8000")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8002")
 
 def extract_text_from_pdf(pdf_file):
@@ -286,7 +285,7 @@ def render_ingest_page():
             files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
             data = {"department": department}
             try:
-                response = requests.post(f"{BACKEND_URL}/upload", files=files, data=data, timeout=60)
+                response = requests.post(f"{BACKEND_URL}/ingest", files=files, data=data, timeout=120)
                 if response.status_code == 200:
                     st.markdown(f"""
                     <div class="success-card">
