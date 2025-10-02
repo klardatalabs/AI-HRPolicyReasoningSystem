@@ -1,0 +1,68 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: tca-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - tca-ollama-data:/root/.ollama
+    deploy:
+      restart_policy:
+        condition: on-failure
+    # If GPU support is available
+#    gpus: all
+#    environment:
+#      - NVIDIA_VISIBLE_DEVICES=all
+
+  vector-db:
+    image: qdrant/qdrant:latest
+    container_name: tca-vector-db
+    ports:
+      - "6333:6333"
+    volumes:
+      - tca-qdrant-data:/qdrant/storage
+
+  backend:
+    image: rishavm/tca-backend:latest
+    container_name: tca-backend
+    environment:
+      - QDRANT_HOST=vector-db
+      - QDRANT_PORT=6333
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+      - MODEL_BACKEND=api
+      - AUDIT_LOG_PATH=/app/logs/audit.jsonl
+    volumes:
+      - ./data/uploads:/app/data/uploads
+      - ./logs:/app/logs
+    depends_on:
+      vector-db:
+        condition: service_started
+      ollama:
+        condition: service_started
+    ports:
+      - "8002:8002"
+    restart: on-failure
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8002/health_check" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+  frontend:
+    image: rishavm/tca-frontend:latest
+    container_name: tca-frontend
+    environment:
+      - BACKEND_URL=http://backend:8002
+    depends_on:
+      - backend
+    volumes:
+      - ./data/uploads:/app/data/uploads
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+volumes:
+  tca-ollama-data:
+  tca-qdrant-data:

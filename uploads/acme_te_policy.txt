@@ -1,0 +1,7 @@
+ACME AG Travel & Expense Policy (v2025-01)
+- Hotel: Max CHF 250 per night in Switzerland; CHF 200 elsewhere in Europe.
+- Flights: Economy for trips under 6 hours; Premium Economy if >6 hours with manager approval.
+- Per diem: CHF 75/day domestic; CHF 90/day international; alcohol not reimbursable.
+- Taxis vs Public Transport: Use public transport when practical; taxi allowed after 22:00 or if carrying heavy equipment.
+- Approvals: Manager approval required for any exceptions; Finance audits claims > CHF 1,500.
+- Receipts: Required for any expense >= CHF 25.
