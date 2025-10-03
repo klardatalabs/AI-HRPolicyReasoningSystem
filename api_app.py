@@ -3,12 +3,13 @@ import re
 import json
 import time
 import hashlib
+import numpy as np
 from enum import Enum
 from typing import List, Dict, Any
 from fastapi import HTTPException, FastAPI, UploadFile, File, Form
 from pydantic import BaseModel
+from models.utils import backup_collection_gcs, restore_collection_gcs
 from fastapi.responses import StreamingResponse
-import numpy as np
 from sentence_transformers import SentenceTransformer
 from models.self_hosted_interface import instantiate_ollama_client, embedding_models, llm_models
 from models.api_interface import instantiate_openai_client
@@ -34,6 +35,9 @@ DEFAULT_API_MODEL = os.getenv("DEFAULT_API_MODEL", "gemini-2.5-flash")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
 OLLAMA_PORT =os.getenv("OLLAMA_PORT", "11434")
+
+# GCS Backup Config
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs("logs", exist_ok=True)
@@ -367,6 +371,26 @@ class BackendType(str, Enum):
 class ModelBackend(BaseModel):
     backend_type: BackendType
 
+
+# ---------------------------
+# GCS
+# ---------------------------
+class BackupRequest(BaseModel):
+    collection_name: str
+
+class RestoreRequest(BaseModel):
+    snapshot_name: str
+    collection_name: str
+
+def get_gcs_bucket():
+    """Create and return GCS bucket client"""
+    try:
+        from google.cloud import storage
+        storage_client = storage.Client()
+        return storage_client.bucket(GCS_BUCKET_NAME)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to initialize GCS client: {str(e)}")
+
 # ---------------------------
 # Auth
 # ---------------------------
@@ -499,6 +523,38 @@ async def get_llm_backend_type():
             "status": "something went wrong."
         }
 
+
+@app.post("/backup")
+async def backup_collection(req: BackupRequest):
+    """Backup Qdrant collection to GCS"""
+    try:
+        bucket = get_gcs_bucket()
+        snapshot_name = backup_collection_gcs(
+            qdrant_client=qdrant_client,
+            bucket=bucket,
+            collection_name=req.collection_name
+        )
+
+        write_audit({
+            "ev": "backup",
+            "collection": req.collection_name,
+            "snapshot": snapshot_name,
+            "status": "success"
+        })
+
+        return {
+            "status": "success",
+            "snapshot_name": snapshot_name,
+            "message": f"Collection {req.collection_name} backed up successfully"
+        }
+    except Exception as e:
+        write_audit({
+            "ev": "backup",
+            "collection": req.collection_name,
+            "status": "failed",
+            "error": str(e)
+        })
+        raise HTTPException(status_code=500, detail=f"Backup failed: {str(e)}")
 
 # if __name__ == "__main__":
 #     import uvicorn
