@@ -400,10 +400,6 @@ def render_chat_page():
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    # Initialize a counter to force text area recreation
-    if "input_key" not in st.session_state:
-        st.session_state.input_key = 0
-
     chat_department = st.selectbox("Your Department", ["finance", "hr", "legal", "operations"], key="chat_dept")
     if st.button("🗑️ Clear Chat History"):
         st.session_state.chat_history = []
@@ -422,39 +418,37 @@ def render_chat_page():
 
     st.markdown("---")
 
-    # Use a dynamic key that changes after submission to force widget recreation
-    user_input = st.text_area(
-        label="Ask anything:",  # still required internally
-        placeholder="Ask anything...",
-        height=45,
-        key=f"query_input_{st.session_state.input_key}",
-        label_visibility="collapsed"
-    )
+    # Use form but hide the form styling with CSS
+    st.markdown("""
+    <style>
+    /* Hide the form border and padding */
+    .stForm {
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    /* Make the form submit button look like a regular button */
+    .stForm button {
+        width: 100% !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-    # if st.button("📤 Send Message"):
-    #     if user_input.strip():
-    #         placeholder = st.empty()
-    #         full_answer = ""
-    #         for partial in chat_stream(user_input):
-    #             placeholder.markdown(
-    #                 f"<div class='chat-message-assistant'><strong>Assistant:</strong> {partial}</div>",
-    #                 unsafe_allow_html=True
-    #             )
-    #             full_answer = partial
-    #         st.session_state.chat_history.append((user_input, full_answer))
-    #
-    #         # Increment the key counter to force a new text area widget
-    #         st.session_state.input_key += 1
-    #         st.rerun()
-    #     else:
-    #         st.warning("⚠️ Please enter a question before sending.")
+    with st.form(key="chat_form", clear_on_submit=True):
+        user_input = st.text_area(
+            label="Ask anything:",
+            placeholder="Ask anything...",
+            height=60,
+            key="chat_input",
+            label_visibility="collapsed"
+        )
 
-    if st.button("📤 Send Message"):
-        if user_input.strip():
+        submitted = st.form_submit_button("📤 Send Message", use_container_width=True, type="primary")
+
+        if submitted and user_input and user_input.strip():
             placeholder = st.empty()
             full_answer = ""
             for partial in chat_stream(user_input):
-                # Check if the response is an error (starts with ❌)
                 if partial.startswith("❌"):
                     placeholder.markdown(
                         f"<div class='error-card'>{partial}</div>",
@@ -468,11 +462,9 @@ def render_chat_page():
                 full_answer = partial
 
             st.session_state.chat_history.append((user_input, full_answer))
-            st.session_state.input_key += 1
             st.rerun()
-        else:
+        elif submitted and (not user_input or not user_input.strip()):
             st.warning("⚠️ Please enter a question before sending.")
-
 
 
 def render_about_page():
