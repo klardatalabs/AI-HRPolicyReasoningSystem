@@ -15,7 +15,7 @@ docker push rishavm/tca-frontend:latest
 
 # run backend
 #uvicorn api_app2:app --reload --host 0.0.0.0 --port 8000
-uvicorn api_app:app --reload --port 8002
+uvicorn api_app:app --port 8002
 # run frontend
 streamlit run frontend.py
 
