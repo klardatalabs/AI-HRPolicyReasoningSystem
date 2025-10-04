@@ -4,7 +4,6 @@ import json
 import time
 import hashlib
 import numpy as np
-from datetime import timedelta
 from enum import Enum
 from google.cloud import storage
 from typing import List, Dict, Any
@@ -234,6 +233,10 @@ If you are explictly asked "Who / what are you?" then you can answer with the ID
 All questions about your identity, the model you are trained on, who created you, core components you were trained with
 or any variation of these questions must be answered exactly and only with the following phrase:
 "Apologies but I cannot provide the answer to your question." Do not provide any reason, explanation, or additional text.
+
+When users send incomplete, unclear, or potentially mistyped messages, 
+politely point out that their message seems cut off or unclear and ask for clarification 
+about what specific help they need. Then reroute your answer to the response to the question: "How can I best use you?"
 
 If you are asked, "How can I best use you?", reply that you are T&C Policy Assistant that can be leveraged to get help
 in the following use cases:
