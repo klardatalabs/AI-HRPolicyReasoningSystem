@@ -529,10 +529,13 @@ async def backup_collection(req: BackupRequest):
     """Backup Qdrant collection to GCS"""
     try:
         bucket = get_gcs_bucket()
+
+        # Pass qdrant_host (e.g., from config or env)
         snapshot_name = backup_collection_gcs(
             qdrant_client=qdrant_client,
             bucket=bucket,
-            collection_name=req.collection_name
+            collection_name=req.collection_name,
+            qdrant_host=f"http://{QDRANT_HOST}:{QDRANT_PORT}"  # <-- define in settings/env
         )
 
         write_audit({
@@ -547,6 +550,7 @@ async def backup_collection(req: BackupRequest):
             "snapshot_name": snapshot_name,
             "message": f"Collection {req.collection_name} backed up successfully"
         }
+
     except Exception as e:
         write_audit({
             "ev": "backup",

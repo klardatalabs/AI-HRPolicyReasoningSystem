@@ -1,49 +1,42 @@
-import io
+import tempfile
 import shutil
 import requests
-from google.resumable_media.requests import ResumableUpload
 
 
-def backup_collection_gcs(qdrant_client, bucket, collection_name: str):
-    """Backup Qdrant collection into GCS with resumable upload"""
+def backup_collection_gcs(qdrant_client, bucket, collection_name: str, qdrant_host: str):
+    """
+    Create a Qdrant snapshot and upload it to a GCS bucket.
+    """
+
+    # Step 1: Create snapshot
     snapshot_info = qdrant_client.create_snapshot(collection_name=collection_name)
+    snapshot_name = snapshot_info.name
 
-    # Find the created snapshot
-    snapshots = qdrant_client.list_snapshots(collection_name=collection_name)
-    target_snapshot = next((s for s in snapshots if s.name == snapshot_info.name), None)
-    if not target_snapshot:
-        raise ValueError(f"Snapshot {snapshot_info.name} not found")
+    # Step 2: Build download URL (local Qdrant)
+    download_url = f"{qdrant_host}/collections/{collection_name}/snapshots/{snapshot_name}"
 
-    # Snapshot size is needed for resumable upload
-    total_size = target_snapshot.size  # Qdrant snapshot usually has this
+    # Step 3: Download snapshot to a temp file, then upload
+    blob = bucket.blob(f"snapshots/{snapshot_name}")
 
-    # Prepare resumable upload
-    blob = bucket.blob(f"snapshots/{snapshot_info.name}")
-    transport = requests.Session()
-
-    upload = ResumableUpload(
-        upload_url=blob.create_resumable_upload_session(),
-        chunk_size=8 * 1024 * 1024,  # 8MB
-    )
-    upload.initiate(transport,
-                    stream=None,
-                    metadata={"contentType": "application/octet-stream"},
-                    stream_final=False,
-                    total_bytes=total_size
-                    )
-
-    # Stream snapshot directly into GCS
-    with requests.get(target_snapshot.download_url, stream=True, timeout=60) as response:
+    with requests.get(download_url, stream=True) as response:
         response.raise_for_status()
 
-        for chunk in response.iter_content(chunk_size=8 * 1024 * 1024):
-            if not chunk:
-                continue
+        with tempfile.NamedTemporaryFile() as tmp_file:
+            # Stream download into temp file
+            for chunk in response.iter_content(chunk_size=8 * 1024 * 1024):
+                if chunk:
+                    tmp_file.write(chunk)
 
-            stream = io.BytesIO(chunk)
-            upload.transmit_next_chunk(transport, stream)
+            tmp_file.flush()
+            tmp_file.seek(0)
 
-    return snapshot_info.name
+            # Upload from the temp file
+            blob.upload_from_file(
+                tmp_file,
+                content_type="application/octet-stream"
+            )
+
+    return snapshot_name
 
 
 def restore_collection_gcs(qdrant_client, bucket, snapshot_name: str, collection_name: str):
