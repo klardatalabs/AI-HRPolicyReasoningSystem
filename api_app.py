@@ -12,7 +12,8 @@ from pydantic import BaseModel
 from models.utils import backup_collection_gcs, restore_latest_snapshot_gcs
 from fastapi.responses import StreamingResponse
 from sentence_transformers import SentenceTransformer
-from models.self_hosted_interface import instantiate_ollama_client, embedding_models, llm_models
+# from models.self_hosted_interface import instantiate_ollama_client, embedding_models, llm_models
+from models.self_hosted_interface import embedding_models
 from models.api_interface import instantiate_openai_client
 from contextlib import asynccontextmanager
 from qdrant_client import QdrantClient
@@ -31,7 +32,7 @@ QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "policy_docs")
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
 MODEL_BACKEND = os.getenv("MODEL_BACKEND")  # "ollama" or "api"
-DEFAULT_SH_MODEL = llm_models[os.getenv("DEFAULT_SH_MODEL")]
+# DEFAULT_SH_MODEL = llm_models[os.getenv("DEFAULT_SH_MODEL")]
 DEFAULT_API_MODEL = os.getenv("DEFAULT_API_MODEL", "gemini-2.5-flash")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
@@ -44,7 +45,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs("logs", exist_ok=True)
 
 # Ollama client
-ollama_client = instantiate_ollama_client(OLLAMA_HOST, OLLAMA_PORT)
+# ollama_client = instantiate_ollama_client(OLLAMA_HOST, OLLAMA_PORT)
 
 # Qdrant client
 qdrant_client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
@@ -313,21 +314,21 @@ def build_prompt(user_query: str, contexts: List[Dict[str, Any]]) -> str:
 
 def stream_llm_response(prompt: str):
     """Yields token-by-token LLM output as UTF-8 bytes for streaming responses."""
-    if MODEL_BACKEND == "ollama":
-        response = ollama_client.chat(
-            model=DEFAULT_SH_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            stream=True,
-        )
-        for event in response:
-            token = event.message.content if event.message else None
-            if token:
-                yield token.encode("utf-8")
+    # if MODEL_BACKEND == "ollama":
+        # response = ollama_client.chat(
+        #     model=DEFAULT_SH_MODEL,
+        #     messages=[
+        #         {"role": "system", "content": SYSTEM_PROMPT},
+        #         {"role": "user", "content": prompt},
+        #     ],
+        #     stream=True,
+        # )
+        # for event in response:
+        #     token = event.message.content if event.message else None
+        #     if token:
+        #         yield token.encode("utf-8")
 
-    elif MODEL_BACKEND == "api":
+    if MODEL_BACKEND == "api":
         client = instantiate_openai_client(GEMINI_API_KEY)
         response = client.chat.completions.create(
             model=DEFAULT_API_MODEL,
@@ -342,7 +343,7 @@ def stream_llm_response(prompt: str):
             if delta:
                 yield delta.encode("utf-8")
     else:
-        raise ValueError(f"Unsupported MODEL_BACKEND={MODEL_BACKEND}")
+        raise ValueError(f"Unsupported MODEL_BACKEND='{MODEL_BACKEND}'")
 
 
 # ---------------------------
