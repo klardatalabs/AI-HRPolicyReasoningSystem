@@ -1,6 +1,10 @@
 import tempfile
-import shutil
+from dotenv import load_dotenv
 import requests
+from datetime import timedelta
+from google.cloud import storage
+
+load_dotenv()
 
 
 def backup_collection_gcs(qdrant_client, bucket, collection_name: str, qdrant_host: str):
@@ -39,16 +43,38 @@ def backup_collection_gcs(qdrant_client, bucket, collection_name: str, qdrant_ho
     return snapshot_name
 
 
-def restore_collection_gcs(qdrant_client, bucket, snapshot_name: str, collection_name: str):
-    """Restore from native snapshot"""
-    # Download snapshot from GCS
-    blob = bucket.blob(f"snapshots/{snapshot_name}")
-    local_path = f"/tmp/{snapshot_name}"
-    blob.download_to_filename(local_path)
+def restore_latest_snapshot_gcs(qdrant_client, bucket, collection_name: str):
+    """Restore the latest snapshot for a collection from GCS into Qdrant using a signed URL."""
+    # Find the latest snapshot for this collection
+    blobs = list(bucket.list_blobs(prefix="snapshots/"))
+    if not blobs:
+        raise FileNotFoundError("No snapshots found in GCS bucket")
 
-    # Move to Qdrant snapshots directory
-    qdrant_snapshot_path = f"/qdrant/storage/snapshots/{snapshot_name}"
-    shutil.move(local_path, qdrant_snapshot_path)
+    # Pick the newest snapshot
+    latest_blob = max(blobs, key=lambda b: b.updated)
 
-    # Recover from snapshot
-    qdrant_client.recover_snapshot(collection_name, qdrant_snapshot_path)
+    # Generate a signed URL for Qdrant to fetch directly
+    signed_url = generate_signed_url(
+        bucket_name=bucket.name,
+        blob_name=latest_blob.name
+    )
+    # Restore snapshot in Qdrant using the signed URL
+    qdrant_client.recover_snapshot(
+        collection_name=collection_name,
+        location=signed_url,
+        wait=True,           # Wait until recovery completes
+        priority="snapshot"  # Use snapshot as source of truth
+    )
+    return latest_blob.name
+
+
+def generate_signed_url(bucket_name, blob_name, expiration=3600):
+    """Generate a signed URL to access a GCS blob."""
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+    url = blob.generate_signed_url(
+        expiration=timedelta(seconds=expiration),
+        method="GET"
+    )
+    return url

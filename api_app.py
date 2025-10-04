@@ -4,11 +4,13 @@ import json
 import time
 import hashlib
 import numpy as np
+from datetime import timedelta
 from enum import Enum
+from google.cloud import storage
 from typing import List, Dict, Any
 from fastapi import HTTPException, FastAPI, UploadFile, File, Form
 from pydantic import BaseModel
-from models.utils import backup_collection_gcs, restore_collection_gcs
+from models.utils import backup_collection_gcs, restore_latest_snapshot_gcs
 from fastapi.responses import StreamingResponse
 from sentence_transformers import SentenceTransformer
 from models.self_hosted_interface import instantiate_ollama_client, embedding_models, llm_models
@@ -379,13 +381,11 @@ class BackupRequest(BaseModel):
     collection_name: str
 
 class RestoreRequest(BaseModel):
-    snapshot_name: str
     collection_name: str
 
 def get_gcs_bucket():
     """Create and return GCS bucket client"""
     try:
-        from google.cloud import storage
         storage_client = storage.Client()
         return storage_client.bucket(GCS_BUCKET_NAME)
     except Exception as e:
@@ -559,6 +559,23 @@ async def backup_collection(req: BackupRequest):
             "error": str(e)
         })
         raise HTTPException(status_code=500, detail=f"Backup failed: {str(e)}")
+
+
+@app.post("/restore_latest_snapshot")
+def restore_vector_collection(req: RestoreRequest):
+    try:
+        bucket = get_gcs_bucket()
+        snapshot_name = restore_latest_snapshot_gcs(
+            qdrant_client=qdrant_client,
+            bucket=bucket,
+            collection_name=req.collection_name
+        )
+        return {
+            "status": "success",
+            "message": f"Collection '{req.collection_name}' restored from snapshot '{snapshot_name}'"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Restore task failed: {str(e)}")
 
 # if __name__ == "__main__":
 #     import uvicorn
