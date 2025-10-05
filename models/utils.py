@@ -1,10 +1,27 @@
+import json
+import os
 import tempfile
+from typing import List
+
 from dotenv import load_dotenv
 import requests
 from datetime import timedelta
+
+from fastapi import HTTPException, Depends, security
 from google.cloud import storage
+import mysql.connector
+from mysql.connector import Error
+from contextlib import contextmanager
 
 load_dotenv()
+
+# MySQL Config
+MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
+MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
+MYSQL_USER = os.getenv("MYSQL_USER", "root")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
+MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "rag_app")
+
 
 
 def backup_collection_gcs(qdrant_client, bucket, collection_name: str, qdrant_host: str):
@@ -78,3 +95,63 @@ def generate_signed_url(bucket_name, blob_name, expiration=3600):
         method="GET"
     )
     return url
+
+# mysql utils
+@contextmanager
+def get_db_connection():
+    connection = None
+    try:
+        connection = mysql.connector.connect(
+            host=MYSQL_HOST,
+            port=MYSQL_PORT,
+            user=MYSQL_USER,
+            password=MYSQL_PASSWORD,
+            database=MYSQL_DATABASE
+        )
+        yield connection
+    except Error as e:
+        print(f"Database connection error: {e}")
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    finally:
+        if connection and connection.is_connected():
+            connection.close()
+
+
+def init_database():
+    """Initialize database and create tables if they don't exist"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # Create users table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    email VARCHAR(255) UNIQUE NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    role VARCHAR(50) DEFAULT 'employee',
+                    allowed_departments JSON DEFAULT '["finance"]',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Insert default users if they don't exist
+            default_users = [
+                ("u-employee@company.com", "Default Employee", "employee", '["finance"]'),
+                ("u-contractor@company.com", "Default Contractor", "contractor", '[]'),
+                ("u-finance@company.com", "Finance Analyst", "finance-analyst", '["finance"]')
+            ]
+
+            for email, name, role, departments in default_users:
+                cursor.execute("""
+                    INSERT IGNORE INTO users (email, name, role, allowed_departments) 
+                    VALUES (%s, %s, %s, %s)
+                """, (email, name, role, departments))
+
+            conn.commit()
+            print("Database initialized successfully")
+
+    except Error as e:
+        print(f"Database initialization error: {e}")
+        raise
