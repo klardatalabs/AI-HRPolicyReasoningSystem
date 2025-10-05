@@ -1,13 +1,9 @@
-import json
 import os
 import tempfile
-from typing import List
-
 from dotenv import load_dotenv
 import requests
 from datetime import timedelta
-
-from fastapi import HTTPException, Depends, security
+from fastapi import HTTPException
 from google.cloud import storage
 import mysql.connector
 from mysql.connector import Error
@@ -18,9 +14,9 @@ load_dotenv()
 # MySQL Config
 MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
-MYSQL_USER = os.getenv("MYSQL_USER", "root")
-MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
-MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "rag_app")
+MYSQL_USER = os.getenv("MYSQL_USER", "tca_user")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "tca_password")
+MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "tca_database")
 
 
 

@@ -9,7 +9,7 @@ from google.cloud import storage
 from typing import List, Dict, Any
 from fastapi import HTTPException, FastAPI, UploadFile, File, Form
 from pydantic import BaseModel
-from models.utils import backup_collection_gcs, restore_latest_snapshot_gcs
+from models.utils import backup_collection_gcs, restore_latest_snapshot_gcs, get_db_connection
 from fastapi.responses import StreamingResponse
 from sentence_transformers import SentenceTransformer
 # from models.self_hosted_interface import instantiate_ollama_client, embedding_models, llm_models
@@ -493,6 +493,22 @@ async def ingest(file: UploadFile = File(...), department: str = Form(...)):
     with open(path, "wb") as f:
         f.write(await file.read())
     ingest_file(path, department)
+    file_name = file.filename
+    file_extension = ""
+    ext = file_name.split(".")[-1]
+    if ext == "txt":
+        file_extension = "text"
+    elif ext == "pdf":
+        file_extension = "pdf"
+    print(file_name)
+    print(file_extension)
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            insert into ingestion_events (file_name, file_type)
+            values (%s, %s)
+        """, (file_name, file_extension))
+        conn.commit()
     return {"status": "ok", "file": file.filename}
 
 
@@ -528,7 +544,7 @@ async def get_llm_backend_type():
         }
 
 
-@app.post("/backup")
+@app.post("/backup_collection")
 async def backup_collection(req: BackupRequest):
     """Backup Qdrant collection to GCS"""
     try:
