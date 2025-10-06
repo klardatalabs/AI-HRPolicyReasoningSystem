@@ -495,7 +495,7 @@ async def ingest(file: UploadFile = File(...), department: str = Form(...)):
     ingest_file(path, department)
     file_name = file.filename
     file_extension = ""
-    ext = file_name.split(".")[-1]
+    ext = file_name.split(".")[-1].lower()
     if ext == "txt":
         file_extension = "text"
     elif ext == "pdf":
