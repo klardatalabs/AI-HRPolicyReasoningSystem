@@ -1,3 +1,4 @@
+import hashlib
 import os
 import tempfile
 from dotenv import load_dotenv
@@ -151,3 +152,55 @@ def init_database():
     except Error as e:
         print(f"Database initialization error: {e}")
         raise
+
+# register user
+def insert_user_to_db(user_obj):
+    with get_db_connection() as conn:
+        try:
+            cursor = conn.cursor()
+            # Check if user already exists
+            cursor.execute("""
+                SELECT id FROM users WHERE email_id = %s
+            """, (user_obj.email_id,))
+
+            existing_user = cursor.fetchone()
+            if existing_user:
+                return {
+                    "success": False,
+                    "message": "User already exists",
+                    "user_id": existing_user[0],
+                    "error_type": "duplicate_email"
+                }
+
+            # Insert new user
+            cursor.execute("""
+                INSERT INTO users (email_id, pwd_hash)
+                VALUES (%s, %s)
+            """, (user_obj.email_id, user_obj.hashed_password))
+            conn.commit()
+
+            result = cursor.lastrowid
+            if result:
+                print("Successfully inserted user with id: ", result)
+                return {
+                    "success": True,
+                    "message": "User successfully created",
+                    "user_id": result
+                }
+            else:
+                print("User insertion completed but no ID returned")
+                return {
+                    "success": False,
+                    "message": "User insertion completed but no ID returned",
+                    "user_id": None,
+                    "error_type": "no_id_returned"
+                }
+        except Exception as e:
+            conn.rollback()
+            print("Error in DB insertion: ", str(e))
+            return {
+                "success": False,
+                "message": f"Database error: {str(e)}",
+                "user_id": None,
+                "error_type": "database_error"
+            }

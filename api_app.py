@@ -9,7 +9,7 @@ from google.cloud import storage
 from typing import List, Dict, Any
 from fastapi import HTTPException, FastAPI, UploadFile, File, Form
 from pydantic import BaseModel
-from models.utils import backup_collection_gcs, restore_latest_snapshot_gcs, get_db_connection
+from models.utils import backup_collection_gcs, restore_latest_snapshot_gcs, get_db_connection, insert_user_to_db
 from fastapi.responses import StreamingResponse
 from sentence_transformers import SentenceTransformer
 # from models.self_hosted_interface import instantiate_ollama_client, embedding_models, llm_models
@@ -21,6 +21,11 @@ from qdrant_client.models import VectorParams, Distance, PointStruct
 from fastapi.requests import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from passlib.context import CryptContext
+from fastapi.security import OAuth2PasswordRequestForm
+from models.data_models import (
+    User
+)
 
 # ---------------------------
 # Config
@@ -49,6 +54,10 @@ os.makedirs("logs", exist_ok=True)
 
 # Qdrant client
 qdrant_client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+
+pwd_context = CryptContext(
+    schemes=["argon2"], deprecated="auto"
+)
 
 # ---------------------------
 # Users / RBAC
@@ -596,6 +605,50 @@ def restore_vector_collection(req: RestoreRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Restore task failed: {str(e)}")
+
+
+@app.post("/register/user")
+async def register(user: User):
+    try:
+        user.hashed_password = pwd_context.hash(user.password)
+        result = insert_user_to_db(user)
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": result["message"],
+                "user_id": result["user_id"]
+            }
+        else:
+            # Handle different error types
+            if result["error_type"] == "duplicate_email":
+                return {
+                    "status": "failure",
+                    "message": result["message"],
+                    "user_id": result["user_id"]
+                }
+            elif result["error_type"] == "database_error":
+                return {
+                    "status": "failure",
+                    "message": "Something went wrong"
+                }
+            elif result["error_type"] == "no_id_returned":
+                return {
+                    "status": "failure",
+                    "message": "Unable to retrieve user information."
+                }
+            else:
+                return {
+                    "status": "failure",
+                    "message": "An unexpected error occurred."
+                }
+    except Exception as e:
+        print(f"Unexpected error in register endpoint: {str(e)}")
+        return {
+            "status": "failure",
+            "message": "An internal server error occurred."
+        }
+
+
 
 # if __name__ == "__main__":
 #     import uvicorn
