@@ -6,7 +6,7 @@ import hashlib
 import numpy as np
 from enum import Enum
 from google.cloud import storage
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Literal
 from fastapi import HTTPException, FastAPI, UploadFile, File, Form, APIRouter, Depends, status
 from pydantic import BaseModel
 from starlette.status import HTTP_401_UNAUTHORIZED
@@ -378,11 +378,17 @@ class IngestReq(BaseModel):
     path: str
     department: str = "finance"
 
+class UserRole(str, Enum):
+    EMPLOYEE = "u-employee"
+    CONTRACTOR = "u-contractor"
+
 class ChatReq(BaseModel):
-    user_id: str
+    # user_id: str
     query: str
     k: int = 4
     model: str
+    role: UserRole
+
 
 class BackendType(str, Enum):
     API = "api"
@@ -440,15 +446,54 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"error": "Invalid request payload"}
     )
 
+# USER AUTHENTICATION ENDPOINTS
+@router.post("/token")
+def get_user_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password."
+        )
+    access_token = create_access_token(
+        data={"sub": user["email_id"]}
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
+
+@router.get("/users/me")
+def read_user_me(token: str = Depends(oauth2_scheme)):
+    user = decode_access_token(token)
+    if not user:
+        raise HTTPException(
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail="User not authorized."
+        )
+    user_email = user["email_id"]
+    return {
+        "description": f"User {user_email} authorized."
+    }
+
+app.include_router(router)
+
+
 @app.post("/chat")
-def chat(req: ChatReq):
-    user = get_user(req.user_id)
+def chat(req: ChatReq, token: str = Depends(oauth2_scheme)):
+    user = decode_access_token(token)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"User role '{req.role}' not authorized"
+        )
+    user_role_details = get_user(req.role)
     raw_query = req.query
 
     if any(phrase in raw_query.lower() for phrase in DANGEROUS_PHRASES):
         write_audit({
             "ev": "blocked_injection",
-            "user": anon(req.user_id),
+            "user": anon(req.role),
             "query": raw_query
         })
         return JSONResponse(
@@ -460,7 +505,7 @@ def chat(req: ChatReq):
     if looks_like_injection(raw_query):
         write_audit({
             "ev": "blocked_injection",
-            "user": anon(req.user_id),
+            "user": anon(req.role),
             "query": raw_query
         })
         return JSONResponse(
@@ -471,18 +516,18 @@ def chat(req: ChatReq):
 
     safe_query = redact_pii(raw_query)
     hits = search_index(
-        safe_query, allowed_departments=user["allowed_departments"], k=req.k
+        safe_query, allowed_departments=user_role_details["allowed_departments"], k=req.k
     )
 
     if not hits:
         answer = "Based on the policy documents, I couldn't find a relevant answer to your question."
         write_audit({
             "ev": "chat",
-            "user": anon(req.user_id),
+            "user": anon(req.role),
             "query": safe_query,
             "answer": answer,
             "sources": [],
-            "rbac": user["allowed_departments"]
+            "rbac": user_role_details["allowed_departments"]
         })
         return StreamingResponse(iter([answer]), media_type="text/plain")
 
@@ -496,11 +541,11 @@ def chat(req: ChatReq):
 
         write_audit({
             "ev": "chat",
-            "user": anon(req.user_id),
+            "user": anon(req.role),
             "query": safe_query,
             "answer": full_text,
             "sources": [h["meta"] for h in hits],
-            "rbac": user["allowed_departments"]
+            "rbac": user_role_details["allowed_departments"]
         })
 
     return StreamingResponse(generate_streamed_response(), media_type="text/plain; charset=utf-8")
@@ -658,36 +703,7 @@ async def register(user: User):
             "message": "An internal server error occurred."
         }
 
-@router.post("/token")
-def get_user_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = authenticate_user(form_data.username, form_data.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password."
-        )
-    access_token = create_access_token(
-        data={"sub": user["email_id"]}
-    )
-    return {
-        "access_token": access_token,
-        "token_type": "bearer"
-    }
 
-@router.get("/users/me")
-def read_user_me(token: str = Depends(oauth2_scheme)):
-    user = decode_access_token(token)
-    if not user:
-        raise HTTPException(
-            status_code=HTTP_401_UNAUTHORIZED,
-            detail="User not authorized."
-        )
-    user_email = user["email_id"]
-    return {
-        "description": f"User {user_email} authorized."
-    }
-
-app.include_router(router)
 
 # if __name__ == "__main__":
 #     import uvicorn
