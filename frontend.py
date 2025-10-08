@@ -30,6 +30,127 @@ st.markdown("""
         padding: 1rem 0;
         border-bottom: 3px solid #3b82f6;
     }
+    
+    .footer {
+        text-align: center;
+        color: #6b7280;
+        font-size: 0.9rem;
+        margin-top: 3rem;
+        padding: 2rem 0;
+        border-top: 1px solid #e5e7eb;
+    }
+    
+    .chat-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+    .chat-message {
+        max-width: 75%;
+        padding: 0.8rem 1rem;
+        border-radius: 1rem;
+        line-height: 1.5;
+        word-wrap: break-word;
+    }
+
+    /* Assistant on left */
+    .chat-message.assistant {
+        background: black;
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 22px 22px 22px 6px;
+        margin: 0.5rem 0;
+        border: 1px solid #d1d5db;
+        max-width: 85%;
+        margin-right: auto;
+    }
+    
+    .you-label {
+        color: #7fffd4;
+        font-weight: 900;
+    }
+
+    /* User on right */
+    .chat-message.user {
+        background: black; /* Changed from linear-gradient */
+        color: white;    /* Added for readability against a black background */
+        padding: 1rem 1.5rem;
+        border-radius: 22px 22px 22px 6px;
+        margin: 0.5rem 0;
+        border: 1px solid #bfdbfe;
+        max-width: 45%;
+        margin-left: auto;
+    }
+    
+    .assistant-label {
+        color: #0066ff;
+        font-weight: 900;
+    }
+       
+    .footer {
+        text-align: center;
+        color: #6b7280;
+        font-size: 0.9rem;
+        margin-top: 3rem;
+        padding: 2rem 0;
+        border-top: 1px solid #e5e7eb;
+    }
+    
+    .stSelectbox > div > div {
+        border-radius: 8px;
+        border: 1px solid #d1d5db;
+    }
+
+    .section-header {
+        font-size: 1.4rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: #ffffff;
+    }
+    
+    .sidebar-nav {
+        padding: 1rem 0;
+    }
+
+    .nav-button {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        margin: 0.25rem 0;
+        border-radius: 8px;
+        border: none;
+        background: #f8fafc;
+        color: #374151;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .nav-button:hover {
+        background: #e2e8f0;
+    }
+
+    .nav-button.active {
+        background: #3b82f6;
+        color: white;
+    }
+    
+    .metric-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+        text-align: center;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    
+    textarea {
+        width: 100% !important;   /* Full width of container */
+        min-height: 40px !important;  /* Adjust height */
+        color: #f2f2f2 !important;    /* Custom text color (DodgerBlue) */
+        font-size: 16px !important;   /* Optional: font size */
+    }
     /* ... (rest of your CSS unchanged) ... */
 </style>
 """, unsafe_allow_html=True)
@@ -38,7 +159,6 @@ st.markdown("""
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8002")
 
 
-### --- NEW CODE START ---
 # -------------------------------
 # SESSION STATE (Auth-related)
 # -------------------------------
@@ -245,7 +365,7 @@ def render_ingest_page():
 def render_chat_page():
     """Render the chat page"""
     st.markdown("""
-        <style>
+        <style> 
         .chat-container {
             display: flex;
             flex-direction: column;
@@ -263,18 +383,50 @@ def render_chat_page():
 
         /* Assistant on left */
         .chat-message.assistant {
-            background-color: #2d2d2d;
-            color: #ffffff;
-            align-self: flex-start;
-            border-top-left-radius: 0;
+            background: black;
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 22px 22px 22px 6px;
+            margin: 0.5rem 0;
+            border: 1px solid #d1d5db;
+            max-width: 85%;
+            margin-right: auto;
+        }
+        
+        .you-label {
+            color: #7fffd4;
+            font-weight: 900;
         }
 
         /* User on right */
         .chat-message.user {
-            background-color: #0078d4;
-            color: white;
-            align-self: flex-end;
-            border-top-right-radius: 0;
+            background: black; /* Changed from linear-gradient */
+            color: white;    /* Added for readability against a black background */
+            padding: 1rem 1.5rem;
+            border-radius: 22px 22px 22px 6px;
+            margin: 0.5rem 0;
+            border: 1px solid #bfdbfe;
+            max-width: 45%;
+            margin-left: auto;
+        }
+        
+        .assistant-label {
+            color: #0066ff;
+            font-weight: 900;
+        }
+           
+        .footer {
+            text-align: center;
+            color: #6b7280;
+            font-size: 0.9rem;
+            margin-top: 3rem;
+            padding: 2rem 0;
+            border-top: 1px solid #e5e7eb;
+        }
+        
+        .stSelectbox > div > div {
+            border-radius: 8px;
+            border: 1px solid #d1d5db;
         }
 
         .section-header {
@@ -282,6 +434,13 @@ def render_chat_page():
             font-weight: 600;
             margin-bottom: 1rem;
             color: #ffffff;
+        }
+        
+        textarea {
+            width: 100% !important;   /* Full width of container */
+            min-height: 40px !important;  /* Adjust height */
+            color: #f2f2f2 !important;    /* Custom text color (DodgerBlue) */
+            font-size: 16px !important;   /* Optional: font size */
         }
         </style>
     """, unsafe_allow_html=True)
@@ -299,8 +458,25 @@ def render_chat_page():
 
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     for user_msg, assistant_msg in st.session_state.chat_history:
-        st.markdown(f"<div class='chat-message user'>{user_msg}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='chat-message assistant'>{assistant_msg}</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"""
+                <div class='chat-message user'>
+                    <div class='you-label'>You</div>
+                    <div>{user_msg}</div>
+                </div>
+                """,
+            unsafe_allow_html=True,
+        )
+        # Assistant message with label
+        st.markdown(
+            f"""
+                <div class='chat-message assistant'>
+                    <div class='assistant-label'>Assistant</div>
+                    <div>{assistant_msg}</div>
+                </div>
+                """,
+            unsafe_allow_html=True,
+        )
     st.markdown('</div>', unsafe_allow_html=True)
 
     user_input = st.text_area("Ask a question:", placeholder="Type here...")
