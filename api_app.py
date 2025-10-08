@@ -7,9 +7,14 @@ import numpy as np
 from enum import Enum
 from google.cloud import storage
 from typing import List, Dict, Any
-from fastapi import HTTPException, FastAPI, UploadFile, File, Form
+from fastapi import HTTPException, FastAPI, UploadFile, File, Form, APIRouter, Depends, status
 from pydantic import BaseModel
-from models.utils import backup_collection_gcs, restore_latest_snapshot_gcs, get_db_connection, insert_user_to_db
+from starlette.status import HTTP_401_UNAUTHORIZED
+
+from models.utils import (
+    backup_collection_gcs, restore_latest_snapshot_gcs, get_db_connection, insert_user_to_db,
+    create_access_token, decode_access_token, authenticate_user
+)
 from fastapi.responses import StreamingResponse
 from sentence_transformers import SentenceTransformer
 # from models.self_hosted_interface import instantiate_ollama_client, embedding_models, llm_models
@@ -22,9 +27,9 @@ from fastapi.requests import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from models.data_models import (
-    User
+    User, Token
 )
 
 # ---------------------------
@@ -422,6 +427,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Secure RAG T&E Assistant", lifespan=lifespan)
 
+router = APIRouter(prefix="/api/v1")
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/token")
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     # Return a generic safe error instead of leaking path info
@@ -648,7 +658,36 @@ async def register(user: User):
             "message": "An internal server error occurred."
         }
 
+@router.post("/token")
+def get_user_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password."
+        )
+    access_token = create_access_token(
+        data={"sub": user["email_id"]}
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
 
+@router.get("/users/me")
+def read_user_me(token: str = Depends(oauth2_scheme)):
+    user = decode_access_token(token)
+    if not user:
+        raise HTTPException(
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail="User not authorized."
+        )
+    user_email = user["email_id"]
+    return {
+        "description": f"User {user_email} authorized."
+    }
+
+app.include_router(router)
 
 # if __name__ == "__main__":
 #     import uvicorn
