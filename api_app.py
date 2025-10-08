@@ -552,7 +552,17 @@ def chat(req: ChatReq, token: str = Depends(oauth2_scheme)):
 
 
 @app.post("/ingest")
-async def ingest(file: UploadFile = File(...), department: str = Form(...)):
+async def ingest(
+    file: UploadFile = File(...),
+    department: str = Form(...),
+    token: str = Depends(oauth2_scheme)
+):
+    user = decode_access_token(token)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"User not authorized"
+        )
     path = os.path.join(UPLOAD_DIR, file.filename)
     with open(path, "wb") as f:
         f.write(await file.read())

@@ -103,23 +103,38 @@ def ingest_document(uploaded_file, department):
 
 
 def chat_with_assistant(user_query, department, model=LLM_MODEL):
-    """Call the backend chat API"""
+    """Call the backend chat API and handle streamed responses."""
     try:
         headers = {"Authorization": f"Bearer {st.session_state.auth_token}"}
-        response = requests.post(
+
+        # Enable streaming mode to handle StreamingResponse properly
+        with requests.post(
             f"{BACKEND_URL}/chat",
-            json={"user_id": st.session_state.username, "query": user_query, "k": 4, "model": model},
+            json={"query": user_query, "k": 4, "model": model, "role": "u-employee"},
             headers=headers,
-            timeout=30
-        )
-        if response.status_code == 200:
-            return True, response.json()
-        else:
-            return False, f"Error {response.status_code}: {response.text}"
+            stream=True,
+            timeout=60,
+        ) as response:
+
+            if response.status_code != 200:
+                return False, f"Error {response.status_code}: {response.text}"
+
+            # Collect streamed chunks
+            full_text = ""
+            for chunk in response.iter_content(chunk_size=None):
+                if chunk:
+                    decoded = chunk.decode("utf-8")
+                    full_text += decoded
+                    # (Optional) If you want to show live updates in Streamlit:
+                    # st.write(decoded)
+
+            return True, {"message": full_text}
+
     except requests.exceptions.RequestException as e:
         return False, f"Connection error: {str(e)}"
     except Exception as e:
         return False, f"Unexpected error: {str(e)}"
+
 
 
 ### --- NEW CODE START ---
@@ -229,31 +244,97 @@ def render_ingest_page():
 
 def render_chat_page():
     """Render the chat page"""
+    st.markdown("""
+        <style>
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .chat-message {
+            max-width: 75%;
+            padding: 0.8rem 1rem;
+            border-radius: 1rem;
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
+
+        /* Assistant on left */
+        .chat-message.assistant {
+            background-color: #2d2d2d;
+            color: #ffffff;
+            align-self: flex-start;
+            border-top-left-radius: 0;
+        }
+
+        /* User on right */
+        .chat-message.user {
+            background-color: #0078d4;
+            color: white;
+            align-self: flex-end;
+            border-top-right-radius: 0;
+        }
+
+        .section-header {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #ffffff;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.markdown('<div class="section-header">💬 Policy Assistant Chat</div>', unsafe_allow_html=True)
+
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
     chat_department = st.selectbox("Your Department", ["finance", "hr", "legal", "operations"], key="chat_dept")
+
     if st.button("🗑️ Clear Chat History"):
         st.session_state.chat_history = []
         st.rerun()
 
+    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     for user_msg, assistant_msg in st.session_state.chat_history:
-        st.markdown(f"<div class='chat-message-user'><b>You:</b> {user_msg}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='chat-message-assistant'><b>Assistant:</b> {assistant_msg}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='chat-message user'>{user_msg}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='chat-message assistant'>{assistant_msg}</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     user_input = st.text_area("Ask a question:", placeholder="Type here...")
     if st.button("📤 Send"):
         if not user_input.strip():
             st.warning("Please enter a question.")
         else:
-            success, result = chat_with_assistant(user_input, chat_department)
-            if success:
-                answer = result.get("message", "No response.")
-                st.session_state.chat_history.append((user_input, answer))
-                st.rerun()
-            else:
-                st.error(result)
+            chat_box = st.empty()  # Placeholder for live updates
+            full_response = ""
+
+            # Streamed version of chat_with_assistant
+            headers = {"Authorization": f"Bearer {st.session_state.auth_token}"}
+            with requests.post(
+                    f"{BACKEND_URL}/chat",
+                    json={"query": user_input, "k": 4, "model": LLM_MODEL, "role": "u-employee"},
+                    headers=headers,
+                    stream=True,
+                    timeout=60,
+            ) as response:
+
+                if response.status_code != 200:
+                    st.error(f"Error {response.status_code}: {response.text}")
+                else:
+                    for chunk in response.iter_content(chunk_size=None):
+                        if chunk:
+                            decoded = chunk.decode("utf-8")
+                            full_response += decoded
+                            chat_box.markdown(
+                                f"<div class='chat-message-assistant'><b>Assistant:</b> {full_response}</div>",
+                                unsafe_allow_html=True,
+                            )
+
+            st.session_state.chat_history.append((user_input, full_response))
+            st.rerun()
 
 
 def render_about_page():
