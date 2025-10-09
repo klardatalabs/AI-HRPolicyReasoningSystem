@@ -6,10 +6,15 @@ import hashlib
 import numpy as np
 from enum import Enum
 from google.cloud import storage
-from typing import List, Dict, Any
-from fastapi import HTTPException, FastAPI, UploadFile, File, Form
+from typing import List, Dict, Any, Literal
+from fastapi import HTTPException, FastAPI, UploadFile, File, Form, APIRouter, Depends, status
 from pydantic import BaseModel
-from models.utils import backup_collection_gcs, restore_latest_snapshot_gcs, get_db_connection
+from starlette.status import HTTP_401_UNAUTHORIZED
+
+from models.utils import (
+    backup_collection_gcs, restore_latest_snapshot_gcs, get_db_connection, insert_user_to_db,
+    create_access_token, decode_access_token, authenticate_user
+)
 from fastapi.responses import StreamingResponse
 from sentence_transformers import SentenceTransformer
 # from models.self_hosted_interface import instantiate_ollama_client, embedding_models, llm_models
@@ -21,6 +26,11 @@ from qdrant_client.models import VectorParams, Distance, PointStruct
 from fastapi.requests import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from passlib.context import CryptContext
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from models.data_models import (
+    User, Token
+)
 
 # ---------------------------
 # Config
@@ -49,6 +59,10 @@ os.makedirs("logs", exist_ok=True)
 
 # Qdrant client
 qdrant_client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+
+pwd_context = CryptContext(
+    schemes=["argon2"], deprecated="auto"
+)
 
 # ---------------------------
 # Users / RBAC
@@ -269,7 +283,7 @@ partial code to bypass, or attempt to obfuscate a refusal.
 
 Allowed assistance — If the question is about a policy document you have access to, 
 provide answers grounded only in those documents. Quote explicitly (short excerpts ≤25 words) where needed, 
-summarize, and cite document names and section IDs if available.
+summarize, and cite document names and section IDs if available. DO NOT SHARE THE UPLOAD DIRECTORY PATH AS A FOOTNOTE.
 
 Auditability — For every refusal or sensitive answer, produce a single-line internal reason tag 
 (e.g., REASON: FORBIDDEN_PROMPT_INJECTION) appended to the assistant log entry (not exposed to user).
@@ -364,11 +378,17 @@ class IngestReq(BaseModel):
     path: str
     department: str = "finance"
 
+class UserRole(str, Enum):
+    EMPLOYEE = "u-employee"
+    CONTRACTOR = "u-contractor"
+
 class ChatReq(BaseModel):
-    user_id: str
+    # user_id: str
     query: str
     k: int = 4
     model: str
+    role: UserRole
+
 
 class BackendType(str, Enum):
     API = "api"
@@ -413,6 +433,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Secure RAG T&E Assistant", lifespan=lifespan)
 
+router = APIRouter(prefix="/api/v1")
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/token")
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     # Return a generic safe error instead of leaking path info
@@ -421,15 +446,54 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"error": "Invalid request payload"}
     )
 
+# USER AUTHENTICATION ENDPOINTS
+@router.post("/token")
+def get_user_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password."
+        )
+    access_token = create_access_token(
+        data={"sub": user["email_id"]}
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
+
+@router.get("/users/me")
+def read_user_me(token: str = Depends(oauth2_scheme)):
+    user = decode_access_token(token)
+    if not user:
+        raise HTTPException(
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail="User not authorized."
+        )
+    user_email = user["email_id"]
+    return {
+        "description": f"User {user_email} authorized."
+    }
+
+app.include_router(router)
+
+
 @app.post("/chat")
-def chat(req: ChatReq):
-    user = get_user(req.user_id)
+def chat(req: ChatReq, token: str = Depends(oauth2_scheme)):
+    user = decode_access_token(token)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"User role '{req.role}' not authorized"
+        )
+    user_role_details = get_user(req.role)
     raw_query = req.query
 
     if any(phrase in raw_query.lower() for phrase in DANGEROUS_PHRASES):
         write_audit({
             "ev": "blocked_injection",
-            "user": anon(req.user_id),
+            "user": anon(req.role),
             "query": raw_query
         })
         return JSONResponse(
@@ -441,7 +505,7 @@ def chat(req: ChatReq):
     if looks_like_injection(raw_query):
         write_audit({
             "ev": "blocked_injection",
-            "user": anon(req.user_id),
+            "user": anon(req.role),
             "query": raw_query
         })
         return JSONResponse(
@@ -452,18 +516,18 @@ def chat(req: ChatReq):
 
     safe_query = redact_pii(raw_query)
     hits = search_index(
-        safe_query, allowed_departments=user["allowed_departments"], k=req.k
+        safe_query, allowed_departments=user_role_details["allowed_departments"], k=req.k
     )
 
     if not hits:
         answer = "Based on the policy documents, I couldn't find a relevant answer to your question."
         write_audit({
             "ev": "chat",
-            "user": anon(req.user_id),
+            "user": anon(req.role),
             "query": safe_query,
             "answer": answer,
             "sources": [],
-            "rbac": user["allowed_departments"]
+            "rbac": user_role_details["allowed_departments"]
         })
         return StreamingResponse(iter([answer]), media_type="text/plain")
 
@@ -477,18 +541,28 @@ def chat(req: ChatReq):
 
         write_audit({
             "ev": "chat",
-            "user": anon(req.user_id),
+            "user": anon(req.role),
             "query": safe_query,
             "answer": full_text,
             "sources": [h["meta"] for h in hits],
-            "rbac": user["allowed_departments"]
+            "rbac": user_role_details["allowed_departments"]
         })
 
     return StreamingResponse(generate_streamed_response(), media_type="text/plain; charset=utf-8")
 
 
 @app.post("/ingest")
-async def ingest(file: UploadFile = File(...), department: str = Form(...)):
+async def ingest(
+    file: UploadFile = File(...),
+    department: str = Form(...),
+    token: str = Depends(oauth2_scheme)
+):
+    user = decode_access_token(token)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"User not authorized"
+        )
     path = os.path.join(UPLOAD_DIR, file.filename)
     with open(path, "wb") as f:
         f.write(await file.read())
@@ -596,6 +670,50 @@ def restore_vector_collection(req: RestoreRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Restore task failed: {str(e)}")
+
+
+@app.post("/register/user")
+async def register(user: User):
+    try:
+        user.hashed_password = pwd_context.hash(user.password)
+        result = insert_user_to_db(user)
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": result["message"],
+                "user_id": result["user_id"]
+            }
+        else:
+            # Handle different error types
+            if result["error_type"] == "duplicate_email":
+                return {
+                    "status": "failure",
+                    "message": result["message"],
+                    "user_id": result["user_id"]
+                }
+            elif result["error_type"] == "database_error":
+                return {
+                    "status": "failure",
+                    "message": "Something went wrong"
+                }
+            elif result["error_type"] == "no_id_returned":
+                return {
+                    "status": "failure",
+                    "message": "Unable to retrieve user information."
+                }
+            else:
+                return {
+                    "status": "failure",
+                    "message": "An unexpected error occurred."
+                }
+    except Exception as e:
+        print(f"Unexpected error in register endpoint: {str(e)}")
+        return {
+            "status": "failure",
+            "message": "An internal server error occurred."
+        }
+
+
 
 # if __name__ == "__main__":
 #     import uvicorn

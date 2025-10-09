@@ -1,13 +1,18 @@
+import hashlib
 import os
 import tempfile
 from dotenv import load_dotenv
 import requests
-from datetime import timedelta
+from datetime import timedelta, datetime
 from fastapi import HTTPException
 from google.cloud import storage
 import mysql.connector
 from mysql.connector import Error
 from contextlib import contextmanager
+from passlib.context import CryptContext
+from jose import jwt, JWTError
+
+from models.data_models import User
 
 load_dotenv()
 
@@ -18,7 +23,13 @@ MYSQL_USER = os.getenv("MYSQL_USER", "tca_user")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "tca_password")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "tca_database")
 
+SECRET_KEY = "a_very_secret_key"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+pwd_context = CryptContext(
+    schemes=["argon2"], deprecated="auto"
+)
 
 def backup_collection_gcs(qdrant_client, bucket, collection_name: str, qdrant_host: str):
     """
@@ -151,3 +162,119 @@ def init_database():
     except Error as e:
         print(f"Database initialization error: {e}")
         raise
+
+# register user
+def insert_user_to_db(user_obj):
+    with get_db_connection() as conn:
+        try:
+            cursor = conn.cursor()
+            # Check if user already exists
+            cursor.execute("""
+                SELECT id FROM users WHERE email_id = %s
+            """, (user_obj.email_id,))
+
+            existing_user = cursor.fetchone()
+            if existing_user:
+                return {
+                    "success": False,
+                    "message": "User already exists",
+                    "user_id": existing_user[0],
+                    "error_type": "duplicate_email"
+                }
+
+            # Insert new user
+            cursor.execute("""
+                INSERT INTO users (email_id, pwd_hash)
+                VALUES (%s, %s)
+            """, (user_obj.email_id, user_obj.hashed_password))
+            conn.commit()
+
+            result = cursor.lastrowid
+            if result:
+                print("Successfully inserted user with id: ", result)
+                return {
+                    "success": True,
+                    "message": "User successfully created",
+                    "user_id": result
+                }
+            else:
+                print("User insertion completed but no ID returned")
+                return {
+                    "success": False,
+                    "message": "User insertion completed but no ID returned",
+                    "user_id": None,
+                    "error_type": "no_id_returned"
+                }
+        except Exception as e:
+            conn.rollback()
+            print("Error in DB insertion: ", str(e))
+            return {
+                "success": False,
+                "message": f"Database error: {str(e)}",
+                "user_id": None,
+                "error_type": "database_error"
+            }
+
+def fetch_user_from_db(email: str):
+    with get_db_connection() as conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                select * 
+                from users
+                where email_id = %s
+            """, (email,)
+            )
+            user = cursor.fetchone()
+            if not user:
+                return None
+            return user
+        except Exception as e:
+            print("Error fetching user: ", str(e))
+            return None
+
+
+def authenticate_user(email_id, password):
+    with get_db_connection() as conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                select * 
+                from users
+                where email_id = %s
+            """, (email_id,)
+            )
+            user = cursor.fetchone()
+            if not user or not pwd_context.verify(password, user["pwd_hash"]):
+                return None
+            return user
+        except Exception as e:
+            print("User authentication error: ", str(e))
+            return None
+
+
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.now() + timedelta(
+        minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+    )
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(
+        to_encode, SECRET_KEY, algorithm=ALGORITHM
+    )
+    return encoded_jwt
+
+def decode_access_token(token: str):
+    try:
+        payload = jwt.decode(
+            token, SECRET_KEY, algorithms=[ALGORITHM]
+        )
+        username = payload.get("sub")   # username <==> email_id
+    except JWTError:
+        return None
+    if not username:
+        print("No username found for this access token...")
+        return None
+    # get the User object from db using the username
+    user_obj = fetch_user_from_db(username)
+    return user_obj
