@@ -392,7 +392,7 @@ def render_chat_page():
             max-width: 85%;
             margin-right: auto;
         }
-        
+
         .you-label {
             color: #7fffd4;
             font-weight: 900;
@@ -400,8 +400,8 @@ def render_chat_page():
 
         /* User on right */
         .chat-message.user {
-            background: black; /* Changed from linear-gradient */
-            color: white;    /* Added for readability against a black background */
+            background: black;
+            color: white;
             padding: 1rem 1.5rem;
             border-radius: 22px 22px 22px 6px;
             margin: 0.5rem 0;
@@ -409,12 +409,12 @@ def render_chat_page():
             max-width: 45%;
             margin-left: auto;
         }
-        
+
         .assistant-label {
             color: #0066ff;
             font-weight: 900;
         }
-           
+
         .footer {
             text-align: center;
             color: #6b7280;
@@ -423,7 +423,7 @@ def render_chat_page():
             padding: 2rem 0;
             border-top: 1px solid #e5e7eb;
         }
-        
+
         .stSelectbox > div > div {
             border-radius: 8px;
             border: 1px solid #d1d5db;
@@ -435,82 +435,104 @@ def render_chat_page():
             margin-bottom: 1rem;
             color: #ffffff;
         }
-        
+
         textarea {
-            width: 100% !important;   /* Full width of container */
-            min-height: 40px !important;  /* Adjust height */
-            color: #f2f2f2 !important;    /* Custom text color (DodgerBlue) */
-            font-size: 16px !important;   /* Optional: font size */
+            width: 100% !important;
+            min-height: 40px !important;
+            color: #f2f2f2 !important;
+            font-size: 16px !important;
         }
         </style>
     """, unsafe_allow_html=True)
 
+    # Header
     st.markdown('<div class="section-header">💬 Policy Assistant Chat</div>', unsafe_allow_html=True)
 
+    # Session state initialization
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
+    # Department selector
     chat_department = st.selectbox("Your Department", ["finance", "hr", "legal", "operations"], key="chat_dept")
 
+    # Clear history
     if st.button("🗑️ Clear Chat History"):
         st.session_state.chat_history = []
         st.rerun()
 
+    # Display chat messages
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     for user_msg, assistant_msg in st.session_state.chat_history:
         st.markdown(
             f"""
-                <div class='chat-message user'>
-                    <div class='you-label'>You</div>
-                    <div>{user_msg}</div>
-                </div>
-                """,
+            <div class='chat-message user'>
+                <div class='you-label'>You</div>
+                <div>{user_msg}</div>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
-        # Assistant message with label
         st.markdown(
             f"""
-                <div class='chat-message assistant'>
-                    <div class='assistant-label'>Assistant</div>
-                    <div>{assistant_msg}</div>
-                </div>
-                """,
+            <div class='chat-message assistant'>
+                <div class='assistant-label'>Assistant</div>
+                <div>{assistant_msg}</div>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
     st.markdown('</div>', unsafe_allow_html=True)
 
-    user_input = st.text_area("Ask a question:", placeholder="Type here...")
-    if st.button("📤 Send"):
+    # --- INPUT FORM ---
+    with st.form(key="chat_form", clear_on_submit=True):
+        user_input = st.text_area(
+            "Ask a question:",
+            placeholder="Type here...",
+            label_visibility="collapsed",
+            key="user_input_text"
+        )
+        submitted = st.form_submit_button("📤 Send")
+
+    if submitted:
         if not user_input.strip():
             st.warning("Please enter a question.")
         else:
-            chat_box = st.empty()  # Placeholder for live updates
+            chat_box = st.empty()
             full_response = ""
 
-            # Streamed version of chat_with_assistant
             headers = {"Authorization": f"Bearer {st.session_state.auth_token}"}
-            with requests.post(
-                    f"{BACKEND_URL}/chat",
-                    json={"query": user_input, "k": 4, "model": LLM_MODEL, "role": "u-employee"},
-                    headers=headers,
-                    stream=True,
-                    timeout=60,
-            ) as response:
 
-                if response.status_code != 200:
-                    st.error(f"Error {response.status_code}: {response.text}")
-                else:
-                    for chunk in response.iter_content(chunk_size=None):
-                        if chunk:
-                            decoded = chunk.decode("utf-8")
-                            full_response += decoded
-                            chat_box.markdown(
-                                f"<div class='chat-message-assistant'><b>Assistant:</b> {full_response}</div>",
-                                unsafe_allow_html=True,
-                            )
+            try:
+                with requests.post(
+                        f"{BACKEND_URL}/chat",
+                        json={"query": user_input, "k": 4, "model": LLM_MODEL, "role": "u-employee"},
+                        headers=headers,
+                        stream=True,
+                        timeout=60,
+                ) as response:
+                    if response.status_code != 200:
+                        st.error(f"Error {response.status_code}: {response.text}")
+                    else:
+                        for chunk in response.iter_content(chunk_size=None):
+                            if chunk:
+                                decoded = chunk.decode("utf-8")
+                                full_response += decoded
+                                chat_box.markdown(
+                                    f"""
+                                    <div class='chat-message assistant'>
+                                        <div class='assistant-label'>Assistant</div>
+                                        <div>{full_response}</div>
+                                    </div>
+                                    """,
+                                    unsafe_allow_html=True,
+                                )
 
-            st.session_state.chat_history.append((user_input, full_response))
-            st.rerun()
+                # Save history
+                st.session_state.chat_history.append((user_input, full_response))
+                st.rerun()
+
+            except requests.exceptions.RequestException as e:
+                st.error(f"Network error: {e}")
 
 
 def render_about_page():
