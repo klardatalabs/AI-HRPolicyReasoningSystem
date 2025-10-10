@@ -1,3 +1,5 @@
+import base64
+
 import streamlit as st
 import os
 import tempfile
@@ -546,11 +548,46 @@ def render_about_page():
     """)
 
 
+def render_sidebar_logo():
+    """Render logo and app title in the sidebar (ChatGPT-style)"""
+    # Encode your local image to base64
+    def get_base64_image(image_path):
+        with open(image_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+        return encoded_string
+
+    # Replace "path/to/your/logo.png" with your actual file path
+    logo_base64 = get_base64_image("images/logo_v3.png")
+
+    st.sidebar.markdown(f"""
+        <div style="
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 0.5rem 0.5rem 1rem 0.5rem;
+            border-bottom: 4px solid #374151;
+        ">
+            <img src="data:image/png;base64,{logo_base64}"
+                 alt="🏢 Klar"
+                 width="40"
+                 style="border-radius: 1px;">
+            <h2 style="color: white; font-weight: 700; font-size: 1.2rem; margin: 0;">
+                HR Policy Assistant
+            </h2>
+        </div>
+    """, unsafe_allow_html=True)
+
+
+
 def main():
     """Main application function"""
-    st.markdown('<div class="main-header" style="color: lightblue;">🏢 HR Terms & Conditions Policy Assistant</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="main-header" style="color: lightblue;">🏢 HR Terms & Conditions Policy Assistant</div>',
+        unsafe_allow_html=True
+    )
 
     # Sidebar navigation
+    render_sidebar_logo()
     st.sidebar.markdown("## 📋 Navigation")
     st.sidebar.write(f"👋 Logged in as **{st.session_state.username}**")
     if st.sidebar.button("Logout"):
