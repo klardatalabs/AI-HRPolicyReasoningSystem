@@ -32,6 +32,11 @@ services:
       - OLLAMA_PORT=11434
       - MODEL_BACKEND=api
       - AUDIT_LOG_PATH=/app/logs/audit.jsonl
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=tca_user
+      - MYSQL_PASSWORD=tca_password
+      - MYSQL_DATABASE=tca_database
     volumes:
       - ./data/uploads:/app/data/uploads
       - ./logs:/app/logs
