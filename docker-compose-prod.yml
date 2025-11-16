@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   ollama:
     image: ollama/ollama:latest
@@ -6,13 +8,7 @@ services:
       - "11434:11434"
     volumes:
       - tca-ollama-data:/root/.ollama
-    deploy:
-      restart_policy:
-        condition: on-failure
-    # If GPU support is available
-#    gpus: all
-#    environment:
-#      - NVIDIA_VISIBLE_DEVICES=all
+    restart: on-failure
 
   vector-db:
     image: qdrant/qdrant:latest
@@ -21,70 +17,88 @@ services:
       - "6333:6333"
     volumes:
       - tca-qdrant-data:/qdrant/storage
-
-  backend:
-    image: rishavm/tca-backend:latest
-    container_name: tca-backend
-    environment:
-      - QDRANT_HOST=vector-db
-      - QDRANT_PORT=6333
-      - OLLAMA_HOST=ollama
-      - OLLAMA_PORT=11434
-      - MODEL_BACKEND=api
-      - AUDIT_LOG_PATH=/app/logs/audit.jsonl
-      - MYSQL_HOST=mysql
-      - MYSQL_PORT=3306
-      - MYSQL_USER=tca_user
-      - MYSQL_PASSWORD=tca_password
-      - MYSQL_DATABASE=tca_database
-    volumes:
-      - ./data/uploads:/app/data/uploads
-      - ./logs:/app/logs
-    depends_on:
-      vector-db:
-        condition: service_started
-      ollama:
-        condition: service_started
-    ports:
-      - "8002:8002"
     restart: on-failure
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8002/health_check" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 45s
-
-  frontend:
-    image: rishavm/tca-frontend:latest
-    container_name: tca-frontend
-    environment:
-      - BACKEND_URL=http://backend:8002
-    depends_on:
-      - backend
-    volumes:
-      - ./data/uploads:/app/data/uploads
-    ports:
-      - "8501:8501"
-    restart: unless-stopped
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mysql:
     image: mysql:8.0
     container_name: tca-mysql
     environment:
-      - MYSQL_ROOT_PASSWORD=rootpassword
-      - MYSQL_DATABASE=tca_database
-      - MYSQL_USER=tca_user
-      - MYSQL_PASSWORD=tca_password
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: tca_database
+      MYSQL_USER: tca_user
+      MYSQL_PASSWORD: tca_password
     volumes:
       - tca-mysql-data:/var/lib/mysql
       - ./mysql-init:/docker-entrypoint-initdb.d
     ports:
       - "3306:3306"
+    restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
-      timeout: 20s
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
       retries: 10
+      start_period: 60s   # MySQL takes time to warm up
+
+  backend:
+    image: rishavm/tca-backend:latest
+    container_name: tca-backend
+    environment:
+      QDRANT_HOST: vector-db
+      QDRANT_PORT: 6333
+      OLLAMA_HOST: ollama
+      OLLAMA_PORT: 11434
+      MODEL_BACKEND: api
+      AUDIT_LOG_PATH: /app/logs/audit.jsonl
+
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: tca_user
+      MYSQL_PASSWORD: tca_password
+      MYSQL_DATABASE: tca_database
+
+    volumes:
+      - ./data/uploads:/app/data/uploads
+      - ./logs:/app/logs
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+      vector-db:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+
+    ports:
+      - "8002:8002"
+
+    restart: on-failure
+
+    # 🟢 Updated healthcheck (backend won't get killed during ingest)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health_check"]
+      interval: 20s
+      timeout: 5s
+      retries: 15          # allows long-running ingest
+      start_period: 90s    # wait before marking unhealthy
+
+  frontend:
+    image: rishavm/tca-frontend:latest
+    container_name: tca-frontend
+    environment:
+      BACKEND_URL: http://backend:8002
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./data/uploads:/app/data/uploads
+    ports:
+      - "8501:8501"
     restart: unless-stopped
 
 volumes:
