@@ -79,14 +79,6 @@ services:
 
     restart: on-failure
 
-    # 🟢 Updated healthcheck (backend won't get killed during ingest)
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health_check"]
-      interval: 20s
-      timeout: 5s
-      retries: 15          # allows long-running ingest
-      start_period: 90s    # wait before marking unhealthy
-
   frontend:
     image: rishavm/tca-frontend:latest
     container_name: tca-frontend
