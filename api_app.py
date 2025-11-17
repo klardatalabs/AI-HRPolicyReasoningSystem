@@ -3,8 +3,11 @@ import re
 import json
 import time
 import hashlib
+import uuid
+import logging
 import numpy as np
 from enum import Enum
+from fast_captcha import img_captcha
 from google.cloud import storage
 from typing import List, Dict, Any, Literal
 from fastapi import HTTPException, FastAPI, UploadFile, File, Form, APIRouter, Depends, status
@@ -31,6 +34,13 @@ from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from models.data_models import (
     User, Token
 )
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level='INFO')
+
+# captcha config
+CAPTCHA_STORE = {}
+CAPTCHA_TTL_SECONDS = 300
 
 # ---------------------------
 # Config
@@ -476,6 +486,26 @@ def read_user_me(token: str = Depends(oauth2_scheme)):
         "description": f"User {user_email} authorized."
     }
 
+@router.get("/captcha/init")
+def init_captcha():
+    img, text = img_captcha()
+
+    logger.info(f"Image and text value: {img}, {text}")
+
+    captcha_id = str(uuid.uuid4())
+    CAPTCHA_STORE[captcha_id] = {
+        "text": text,
+        "expires_at": time.time() + CAPTCHA_TTL_SECONDS
+    }
+
+    logger.info(f"Captcha DB: {CAPTCHA_STORE}")
+
+    return StreamingResponse(
+        content=img,
+        media_type="image/jpeg",
+        headers={"X-Captcha-ID": captcha_id}   # <-- return ID in header
+    )
+
 app.include_router(router)
 
 
@@ -672,8 +702,34 @@ def restore_vector_collection(req: RestoreRequest):
         raise HTTPException(status_code=500, detail=f"Restore task failed: {str(e)}")
 
 
+# CAPTCHA
+class CaptchaInput(BaseModel):
+    captcha_id: str
+    captcha_text: str
+
+
+def captcha_required(payload: CaptchaInput = Depends()):
+    logger.info(f"Capcha database: {CAPTCHA_STORE}" )
+    data = CAPTCHA_STORE.get(payload.captcha_id)
+
+    if not data:
+        raise HTTPException(status_code=400, detail="Captcha not found or expired")
+
+    if data["expires_at"] < time.time():
+        CAPTCHA_STORE.pop(payload.captcha_id, None)
+        raise HTTPException(status_code=400, detail="Captcha expired")
+
+    if data["text"].lower() != payload.captcha_text.lower():
+        raise HTTPException(status_code=400, detail="Incorrect captcha")
+
+    # Valid → delete so it's one-time use
+    CAPTCHA_STORE.pop(payload.captcha_id, None)
+
+    return True
+
+
 @app.post("/register/user")
-async def register(user: User):
+async def register(user: User, _captcha_ok: bool = Depends(captcha_required)):
     try:
         user.hashed_password = pwd_context.hash(user.password)
         result = insert_user_to_db(user)
@@ -712,8 +768,6 @@ async def register(user: User):
             "status": "failure",
             "message": "An internal server error occurred."
         }
-
-
 
 # if __name__ == "__main__":
 #     import uvicorn

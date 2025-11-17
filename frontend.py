@@ -7,6 +7,7 @@ import PyPDF2
 import io
 import json
 import requests
+from PIL import Image
 
 # we can make this configurable later on
 LLM_MODEL = "mistral:latest"
@@ -159,7 +160,7 @@ st.markdown("""
 
 # Backend API configuration
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8002")
-
+API_PREFIX = "/api/v1"
 
 # -------------------------------
 # SESSION STATE (Auth-related)
@@ -257,73 +258,284 @@ def chat_with_assistant(user_query, department, model=LLM_MODEL):
     except Exception as e:
         return False, f"Unexpected error: {str(e)}"
 
+# authentication pages
+def load_captcha(captcha_type="register"):
+    """
+    Load captcha from backend and store in session state
+
+    Args:
+        captcha_type (str): Type of captcha - "register" or "login"
+    """
+    try:
+        res = requests.get(f"{BACKEND_URL}/{API_PREFIX}/captcha/init", timeout=10)
+    except Exception as e:
+        st.error(f"Unable to contact backend for captcha: {e}")
+        return False
+
+    if res.status_code != 200:
+        st.error(f"Unable to load captcha: {res.text}")
+        return False
+
+    # Store captcha data with the specified type prefix
+    st.session_state[f"{captcha_type}_captcha_id"] = res.headers.get("X-Captcha-ID")
+    st.session_state[f"{captcha_type}_captcha_img"] = res.content
+    return True
 
 
-### --- NEW CODE START ---
-# -------------------------------
-# AUTH PAGES
-# -------------------------------
 def register_page():
     st.title("🧾 Create an Account")
-
+    # ------------------------------------------------------
+    # Show persistent error if exists (after rerun)
+    # ------------------------------------------------------
+    if "register_error" in st.session_state and st.session_state["register_error"]:
+        st.error(st.session_state.pop("register_error"))
+    # ------------------------------------------------------
+    # Registration form
+    # ------------------------------------------------------
     with st.form("register_form"):
-        # username = st.text_input("Username")
         email = st.text_input("Email ID")
         password = st.text_input("Password", type="password")
+
+        # --------------------------------------------------
+        # Conditionally show captcha ONLY after both fields filled
+        # --------------------------------------------------
+        if email and password:
+
+            # Ensure captcha is loaded in session state
+            if "register_captcha_id" not in st.session_state:
+                if not load_captcha("register"):
+                    st.stop()
+
+            captcha_id = st.session_state.get("register_captcha_id")
+            captcha_img_bytes = st.session_state.get("register_captcha_img")
+
+            # Display captcha
+            try:
+                captcha_img = Image.open(io.BytesIO(captcha_img_bytes))
+                st.image(captcha_img, caption="Please enter the text shown above")
+            except:
+                st.warning("Failed to render captcha image.")
+
+            # Captcha input
+            captcha_text = st.text_input("Captcha", placeholder="Enter the text")
+
+            # Refresh captcha button
+            if st.form_submit_button("🔄 Refresh Captcha"):
+                st.session_state.pop("register_captcha_id", None)
+                st.session_state.pop("register_captcha_img", None)
+                load_captcha("register")
+                st.rerun()
+
+        else:
+            captcha_text = None
+
+        # Submit button
         submit = st.form_submit_button("Register")
 
+        # ------------------------------------------------------
+        # Submit logic
+        # ------------------------------------------------------
         if submit:
-            if not email or not password:
-                st.warning("Please fill in all fields.")
-            else:
-                try:
-                    res = requests.post(
-                        f"{BACKEND_URL}/register/user",
-                        json={"email_id": email, "password": password, "hashed_password": None},
-                        timeout=15
-                    )
-                    if res.status_code == 200:
-                        st.success("✅ Registration successful! You can now log in.")
-                        st.session_state.show_register = False
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Registration failed: {res.text}")
-                except Exception as e:
-                    st.error(f"Registration error: {str(e)}")
 
+            # Basic validation
+            if not email or not password:
+                st.warning("Please fill in both email and password.")
+                return
+
+            if not captcha_text:
+                st.warning("Please complete the captcha.")
+                return
+
+            params = {
+                "captcha_id": st.session_state.get("register_captcha_id"),
+                "captcha_text": captcha_text
+            }
+
+            # Send registration request
+            try:
+                res = requests.post(
+                    f"{BACKEND_URL}/register/user",
+                    json={"email_id": email, "password": password},
+                    params=params,
+                    timeout=15
+                )
+            except Exception as e:
+                st.error(f"Registration request failed: {e}")
+                return
+
+            # Parse body if possible
+            try:
+                resp_json = res.json()
+            except:
+                resp_json = None
+
+            if res.status_code == 200:
+                # Backend-level success/failure
+                if resp_json and resp_json.get("status") == "success":
+                    st.success("🎉 Registration successful! You can now log in.")
+
+                    # cleanup state and go back to login
+                    st.session_state.pop("register_captcha_id", None)
+                    st.session_state.pop("register_captcha_img", None)
+                    st.session_state.show_register = False
+                    st.rerun()
+
+                else:
+                    # registration failed — show error and refresh captcha
+                    msg = (
+                        resp_json.get("message")
+                        if resp_json else res.text
+                    )
+                    st.session_state["register_error"] = f"Registration failed: {msg}"
+
+                    st.session_state.pop("register_captcha_id", None)
+                    st.session_state.pop("register_captcha_img", None)
+                    st.rerun()
+
+            else:
+                # Non-200 status → show error & refresh captcha
+                msg = (
+                    resp_json.get("detail") or
+                    resp_json.get("message") if resp_json else
+                    res.text
+                )
+                st.session_state["register_error"] = f"Registration failed: {msg}"
+
+                st.session_state.pop("register_captcha_id", None)
+                st.session_state.pop("register_captcha_img", None)
+                st.rerun()
+
+    # ------------------------------------------------------
+    # Back to login
+    # ------------------------------------------------------
     if st.button("⬅️ Back to Login"):
         st.session_state.show_register = False
+        # cleanup captcha
+        st.session_state.pop("register_captcha_id", None)
+        st.session_state.pop("register_captcha_img", None)
         st.rerun()
 
 
 def login_page():
     st.title("🔐 Login to Continue")
+    # ------------------------------------------------------
+    # Show any previous error stored across reruns
+    # ------------------------------------------------------
+    if "login_error" in st.session_state and st.session_state["login_error"]:
+        st.error(st.session_state.pop("login_error"))
 
+    # ------------------------------------------------------
+    # Login form
+    # ------------------------------------------------------
     with st.form("login_form"):
         email = st.text_input("Email ID")
         password = st.text_input("Password", type="password")
+
+        # --------------------------------------------------
+        # Conditionally show captcha ONLY if both fields filled
+        # --------------------------------------------------
+        if email and password:
+
+            # ensure captcha exists
+            if "login_captcha_id" not in st.session_state:
+                if not load_captcha("login"):
+                    st.stop()
+
+            captcha_id = st.session_state.get("login_captcha_id")
+            captcha_img_bytes = st.session_state.get("login_captcha_img")
+
+            # Show captcha image
+            try:
+                captcha_img = Image.open(io.BytesIO(captcha_img_bytes))
+                st.image(captcha_img, caption="Please enter the text shown above")
+            except:
+                st.warning("Failed to render captcha image.")
+
+            # Captcha input box
+            captcha_text = st.text_input("Captcha", placeholder="Enter the text")
+
+            # Refresh button
+            if st.form_submit_button("🔄 Refresh Captcha"):
+                st.session_state.pop("login_captcha_id", None)
+                st.session_state.pop("login_captcha_img", None)
+                load_captcha("login")
+                st.rerun()
+
+        else:
+            captcha_text = None  # not required yet
+
+        # Final submit button
         submit = st.form_submit_button("Login")
 
+        # --------------------------------------------------
+        # Login submit logic
+        # --------------------------------------------------
         if submit:
+            if not email or not password:
+                st.warning("Please fill in both email and password.")
+                return
+
+            # If captcha is required but empty
+            if email and password and not captcha_text:
+                st.warning("Please complete the captcha.")
+                return
+
+            # Build params only if captcha was shown
+            params = {}
+            if email and password:
+                params = {
+                    "captcha_id": st.session_state.get("login_captcha_id"),
+                    "captcha_text": captcha_text
+                }
+
+            # Perform login request
             try:
-                response = requests.post(
+                res = requests.post(
                     f"{BACKEND_URL}/api/v1/token",
                     data={"username": email, "password": password},
+                    params=params,
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    timeout=15
+                    timeout=15,
                 )
-                if response.status_code == 200:
-                    token_data = response.json()
-                    st.session_state.auth_token = token_data["access_token"]
-                    st.session_state.username = email
-                    st.success("✅ Login successful!")
-                    st.rerun()
-                else:
-                    st.error("❌ Invalid username or password.")
             except Exception as e:
-                st.error(f"Login failed: {str(e)}")
+                st.error(f"Login failed: {e}")
+                return
 
+            # Parse response
+            if res.status_code == 200:
+                token_data = res.json()
+                st.session_state.auth_token = token_data["access_token"]
+                st.session_state.username = email
+
+                # Cleanup captcha
+                st.session_state.pop("login_captcha_id", None)
+                st.session_state.pop("login_captcha_img", None)
+
+                st.success("✅ Login successful!")
+                st.rerun()
+            else:
+                # Capture error and refresh captcha
+                try:
+                    body = res.json()
+                    msg = body.get("detail") or body.get("message") or str(body)
+                except:
+                    msg = res.text or "Invalid login."
+
+                st.session_state["login_error"] = f"Login failed: {msg}"
+
+                # Regenerate captcha next rerun
+                st.session_state.pop("login_captcha_id", None)
+                st.session_state.pop("login_captcha_img", None)
+
+                st.rerun()
+
+    # ------------------------------------------------------
+    # Register button
+    # ------------------------------------------------------
     if st.button("📝 Register"):
+        # Cleanup captcha when leaving page
+        st.session_state.pop("login_captcha_id", None)
+        st.session_state.pop("login_captcha_img", None)
         st.session_state.show_register = True
         st.rerun()
 
