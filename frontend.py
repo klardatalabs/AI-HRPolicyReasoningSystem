@@ -769,7 +769,7 @@ def render_sidebar_logo():
         return encoded_string
 
     # Replace "path/to/your/logo.png" with your actual file path
-    logo_base64 = get_base64_image("images/logo_v3.png")
+    logo_base64 = get_base64_image("images/final_logo.png")
 
     st.sidebar.markdown(f"""
         <div style="
