@@ -10,7 +10,7 @@ from enum import Enum
 from fast_captcha import img_captcha
 from google.cloud import storage
 from typing import List, Dict, Any
-from fastapi import HTTPException, FastAPI, UploadFile, File, Form, APIRouter, Depends, status, Request
+from fastapi import HTTPException, FastAPI, UploadFile, File, Form, APIRouter, Depends, status
 from pydantic import BaseModel
 from starlette.status import HTTP_401_UNAUTHORIZED
 
