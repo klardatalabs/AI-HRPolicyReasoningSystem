@@ -32,7 +32,7 @@ from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from models.data_models import (
-    User, Token
+    User
 )
 from models.rate_limiter import rag_app_limiter
 from slowapi.errors import RateLimitExceeded
