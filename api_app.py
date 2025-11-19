@@ -9,7 +9,7 @@ import numpy as np
 from enum import Enum
 from fast_captcha import img_captcha
 from google.cloud import storage
-from typing import List, Dict, Any, Literal
+from typing import List, Dict, Any
 from fastapi import HTTPException, FastAPI, UploadFile, File, Form, APIRouter, Depends, status, Request
 from pydantic import BaseModel
 from starlette.status import HTTP_401_UNAUTHORIZED
@@ -35,7 +35,6 @@ from models.data_models import (
     User, Token
 )
 from models.rate_limiter import rag_app_limiter
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
