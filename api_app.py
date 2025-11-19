@@ -10,7 +10,7 @@ from enum import Enum
 from fast_captcha import img_captcha
 from google.cloud import storage
 from typing import List, Dict, Any, Literal
-from fastapi import HTTPException, FastAPI, UploadFile, File, Form, APIRouter, Depends, status
+from fastapi import HTTPException, FastAPI, UploadFile, File, Form, APIRouter, Depends, status, Request
 from pydantic import BaseModel
 from starlette.status import HTTP_401_UNAUTHORIZED
 
@@ -34,6 +34,9 @@ from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from models.data_models import (
     User, Token
 )
+from models.rate_limiter import rag_app_limiter
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level='INFO')
@@ -56,7 +59,10 @@ MODEL_BACKEND = os.getenv("MODEL_BACKEND")  # "ollama" or "api"
 DEFAULT_API_MODEL = os.getenv("DEFAULT_API_MODEL", "gemini-2.5-flash")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
-OLLAMA_PORT =os.getenv("OLLAMA_PORT", "11434")
+OLLAMA_PORT = os.getenv("OLLAMA_PORT", "11434")
+
+# rate limits
+API_RATE_LIMIT = os.getenv("API_RATE_LIMIT")
 
 # GCS Backup Config
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
@@ -445,6 +451,25 @@ app = FastAPI(title="Secure RAG T&E Assistant", lifespan=lifespan)
 
 router = APIRouter(prefix="/api/v1")
 
+async def custom_rate_limit_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "message": "Servers are busy. Please try again later."
+        }
+    )
+
+# add rate limiter and exceptions
+app.state.limiter = rag_app_limiter
+app.add_exception_handler(
+    RateLimitExceeded,
+    custom_rate_limit_exception_handler
+)
+
+# define rate limit scopes
+AUTHORIZATION_LIMIT = rag_app_limiter.shared_limit("1/minute", scope="authorization")
+INTERACTION_LIMIT = rag_app_limiter.shared_limit("1/minute", scope="interaction")
+HEALTH_CHECK_LIMIT = rag_app_limiter.shared_limit("10/minute", scope="health")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/token")
 
@@ -474,7 +499,11 @@ def get_user_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     }
 
 @router.get("/users/me")
-def read_user_me(token: str = Depends(oauth2_scheme)):
+@AUTHORIZATION_LIMIT
+def read_user_me(
+    request: Request,
+    token: str = Depends(oauth2_scheme)
+):
     user = decode_access_token(token)
     if not user:
         raise HTTPException(
@@ -487,7 +516,8 @@ def read_user_me(token: str = Depends(oauth2_scheme)):
     }
 
 @router.get("/captcha/init")
-def init_captcha():
+@AUTHORIZATION_LIMIT
+def init_captcha(request: Request):
     img, text = img_captcha()
 
     logger.info(f"Image and text value: {img}, {text}")
@@ -510,7 +540,8 @@ app.include_router(router)
 
 
 @app.post("/chat")
-def chat(req: ChatReq, token: str = Depends(oauth2_scheme)):
+@INTERACTION_LIMIT
+def chat(request: Request, req: ChatReq, token: str = Depends(oauth2_scheme)):
     user = decode_access_token(token)
     if not user:
         raise HTTPException(
@@ -582,7 +613,9 @@ def chat(req: ChatReq, token: str = Depends(oauth2_scheme)):
 
 
 @app.post("/ingest")
+@INTERACTION_LIMIT
 async def ingest(
+    request: Request,   # for rate limiting
     file: UploadFile = File(...),
     department: str = Form(...),
     token: str = Depends(oauth2_scheme)
@@ -617,11 +650,13 @@ async def ingest(
 
 
 @app.get("/")
-def root():
+@INTERACTION_LIMIT
+def root(request: Request):
     return {"status": "application running!"}
 
 @app.get("/health_check")
-def health_check():
+@HEALTH_CHECK_LIMIT
+def health_check(request: Request):
     return {"status": "app is healthy"}
 
 @app.post("/set-model-backend")
@@ -729,7 +764,12 @@ def captcha_required(payload: CaptchaInput = Depends()):
 
 
 @app.post("/register/user")
-async def register(user: User, _captcha_ok: bool = Depends(captcha_required)):
+@AUTHORIZATION_LIMIT
+async def register(
+    request: Request,   # for rate limiting
+    user: User,
+    _captcha_ok: bool = Depends(captcha_required)
+):
     try:
         user.hashed_password = pwd_context.hash(user.password)
         result = insert_user_to_db(user)
