@@ -1,11 +1,9 @@
 import base64
-
 import streamlit as st
 import os
 import tempfile
 import PyPDF2
 import io
-import json
 import requests
 from PIL import Image
 
