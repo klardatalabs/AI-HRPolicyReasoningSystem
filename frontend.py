@@ -154,7 +154,39 @@ st.markdown("""
         color: #f2f2f2 !important;    /* Custom text color (DodgerBlue) */
         font-size: 16px !important;   /* Optional: font size */
     }
-    /* ... (rest of your CSS unchanged) ... */
+    /* ---------------------------------------------------- */
+    /* NEW CSS to push footer to the bottom of the sidebar */
+    /* ---------------------------------------------------- */
+    /* The main sidebar content container */
+    [data-testid="stSidebarContent"] {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh; /* Ensure it takes full viewport height */
+    }
+    
+    /* The container for the logo and top navigation */
+    .sidebar-top-section {
+        flex: 1; /* This pushes the element below it (the footer) to the bottom */
+        display: flex; /* Makes sure children elements flow correctly */
+        flex-direction: column;
+    }
+
+    /* The container for the logout/user info, styled as a footer */
+    .sidebar-bottom-section {
+        padding: 4rem 1rem 1rem 1rem; /* Increased top padding to 2rem */
+        border-top: 2px solid #374151; /* Separator line */
+    }
+
+    /* Adjust the main nav container padding */
+    .sidebar-nav {
+        padding: 1rem 0 0 0; /* Adjusted padding */
+        flex-grow: 1;
+    }
+    
+    .sidebar-user-section {
+        padding: 8rem 2rem 1rem 0.5rem;
+        margin-bottom: 10px; /* Space between logo and nav */
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -751,7 +783,6 @@ def render_chat_page():
 
 def render_about_page():
     """Render about page"""
-    st.markdown('<div class="section-header">ℹ️ About</div>', unsafe_allow_html=True)
     st.markdown("""
     ## This RAG-based assistant helps you interact with company policy documents.
     - 📤 Upload and process policies  
@@ -772,39 +803,36 @@ def render_sidebar_logo():
     logo_base64 = get_base64_image("images/final_logo.png")
 
     st.sidebar.markdown(f"""
-        <div style="
+        <div class="sidebar-logo-section" style=" /* <--- ADDED CLASS sidebar-logo-section */
             display: flex;
             align-items: center;
-            gap: 15px;
+            gap: 12px;
             padding: 0.5rem 0.5rem 1rem 0.5rem;
-            border-bottom: 4px solid #374151;
+            border-bottom: 1px solid #374151;
         ">
             <img src="data:image/png;base64,{logo_base64}"
                  alt="🏢 Klar"
-                 width="40"
-                 style="border-radius: 1px;">
-            <h2 style="color: white; font-weight: 700; font-size: 1.2rem; margin: 0;">
-                HR Policy Assistant
-            </h2>
+                 width="200"
+                 style="border-radius: 4px;">
         </div>
     """, unsafe_allow_html=True)
-
 
 
 def main():
     """Main application function"""
     st.markdown(
-        '<div class="main-header" style="color: lightblue;">🏢 HR Terms & Conditions Policy Assistant</div>',
+        '<div class="main-header" style="color: lightblue;">🏢 Terms & Conditions Policy Assistant</div>',
         unsafe_allow_html=True
     )
 
-    # Sidebar navigation
-    render_sidebar_logo()
-    st.sidebar.markdown("## 📋 Navigation")
-    st.sidebar.write(f"👋 Logged in as **{st.session_state.username}**")
-    if st.sidebar.button("Logout"):
-        logout()
+    # -----------------------------------------------
+    # START: Top Sidebar Content (Logo and Navigation)
+    # -----------------------------------------------
+    st.sidebar.markdown('<div class="sidebar-top-section">', unsafe_allow_html=True)  # Start TOP flex container
 
+    render_sidebar_logo()
+
+    # Navigation buttons
     if st.sidebar.button("📤 Ingest Documents", use_container_width=True):
         st.session_state.page = "ingest"
     if st.sidebar.button("💬 Chat with Assistant", use_container_width=True):
@@ -812,6 +840,30 @@ def main():
     if st.sidebar.button("ℹ️ About", use_container_width=True):
         st.session_state.page = "about"
         st.rerun()
+
+    st.sidebar.markdown('</div>', unsafe_allow_html=True)  # End TOP flex container
+    # -----------------------------------------------
+    # END: Top Sidebar Content
+    # -----------------------------------------------
+
+    # -----------------------------------------------
+    # START: Bottom Sidebar Content (User Info and Logout)
+    # -----------------------------------------------
+    st.sidebar.markdown('<div class="sidebar-bottom-section">', unsafe_allow_html=True)  # Start BOTTOM container
+
+    # User Info
+    st.sidebar.markdown(
+        '<div class="sidebar-user-section">', unsafe_allow_html=True
+    )
+    st.sidebar.write(f"👋 Logged in as **{st.session_state.username}**")
+    # Logout Button
+    if st.sidebar.button("Logout", use_container_width=True):  # Ensure width is full
+        logout()
+
+    st.sidebar.markdown('</div>', unsafe_allow_html=True)  # End BOTTOM container
+    # -----------------------------------------------
+    # END: Bottom Sidebar Content
+    # -----------------------------------------------
 
     if "page" not in st.session_state:
         st.session_state.page = "ingest"
@@ -825,9 +877,8 @@ def main():
 
     st.markdown("""
     <div class="footer">
-        <p>🔐 Secure RAG T&C Policy Assistant | Powered by FastAPI & Streamlit</p>
         <p style="font-size: 0.8rem; color: #9ca3af;">
-            All conversations are logged for compliance.
+            🔐 All conversations are logged for compliance.
         </p>
     </div>
     """, unsafe_allow_html=True)
