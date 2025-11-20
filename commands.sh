@@ -21,3 +21,6 @@ streamlit run frontend.py
 
 # run production docker compose
 docker compose -f docker-compose-prod.yml up -d
+
+# secure https deployment
+uvicorn api_app:app --port 443 --ssl-keyfile localhost.com+1-key.pem --ssl-certfile localhost.com+1.pem

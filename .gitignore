@@ -4,3 +4,5 @@
 docker-compose.yml
 create-directory.sh
 keys
+localhost+1-key.pem
+localhost+1.pem
