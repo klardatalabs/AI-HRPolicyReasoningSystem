@@ -881,9 +881,9 @@ def render_documents_page():
         "department": "Department",
         "ingestion_date": "Ingestion Date",
         "status": "Status"
-    }).drop(columns=["id"])  # Drop internal ID
+    }).drop(columns=["id"]).reset_index(drop=True)  # Drop internal ID
 
-    st.subheader(f"Showing {len(df_display)} Documents")
+    st.subheader(f"Showing {len(df_display)} Document(s)...")
 
     # Display the DataFrame as a table
     st.dataframe(
@@ -961,6 +961,8 @@ def main():
         render_ingest_page()
     elif st.session_state.page == "chat":
         render_chat_page()
+    elif st.session_state.page == "documents":
+        render_documents_page()
     elif st.session_state.page == "about":
         render_about_page()
 
