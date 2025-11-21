@@ -835,6 +835,8 @@ def main():
         st.session_state.page = "ingest"
     if st.sidebar.button("💬 Chat with Assistant", use_container_width=True):
         st.session_state.page = "chat"
+    if st.sidebar.button("📄 View Documents", use_container_width=True):
+        st.session_state.page = "documents"
     if st.sidebar.button("ℹ️ About", use_container_width=True):
         st.session_state.page = "about"
         st.rerun()
