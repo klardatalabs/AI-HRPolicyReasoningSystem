@@ -905,6 +905,100 @@ def render_documents_page():
     """, unsafe_allow_html=True)
 
 
+def render_admin_roles_page():
+    """Streamlit frontend page for assigning and revoking admin roles."""
+    st.markdown('<div class="section-header">👑 Admin Role Management</div>', unsafe_allow_html=True)
+
+    headers = {"Authorization": f"Bearer {st.session_state.auth_token}"}
+
+    # st.subheader("🔍 Current Admin Users")
+
+    # Fetch admin list
+    try:
+        resp = requests.get(f"{BACKEND_URL}/{API_PREFIX}/admin/list", headers=headers, timeout=45)
+        if resp.status_code == 200:
+            admins = resp.json().get("admins", [])
+        else:
+            st.error(f"Failed to load admin list: {resp.text}")
+            admins = []
+    except Exception as e:
+        st.error(f"Could not load admin list: {e}")
+        admins = []
+
+    if admins:
+        st.success("Current admin users")
+        df_admins = pd.DataFrame(admins, columns=["Email ID"])
+        st.dataframe(df_admins, hide_index=True)
+    else:
+        st.info("No admins found or failed to load list.")
+
+    st.markdown("---")
+
+    # -------------------------------------
+    # MAKE ADMIN SECTION
+    # -------------------------------------
+    st.subheader("➕ Grant Admin Access")
+
+    with st.form("make_admin_form"):
+        make_email = st.text_input("Enter email to grant admin access")
+        submit_make = st.form_submit_button("Grant Admin Access")
+
+    if submit_make:
+        if not make_email.strip():
+            st.warning("Please enter an email.")
+        else:
+            try:
+                res = requests.post(
+                    f"{BACKEND_URL}/{API_PREFIX}/admin/make",
+                    json={"user_email_id": make_email},
+                    headers=headers,
+                    timeout=45
+                )
+                if res.status_code == 200:
+                    msg = res.json().get("message", "Success")
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(res.text)
+            except Exception as e:
+                st.error(f"Request failed: {e}")
+
+    st.markdown("---")
+
+    # -------------------------------------
+    # REVOKE ADMIN SECTION
+    # -------------------------------------
+    st.subheader("❌ Revoke Admin Access")
+
+    with st.form("revoke_admin_form"):
+        revoke_email = st.text_input("Enter email to revoke admin access")
+        submit_revoke = st.form_submit_button("Revoke Admin Access")
+
+    if submit_revoke:
+        if not revoke_email.strip():
+            st.warning("Please enter an email.")
+        else:
+            try:
+                res = requests.post(
+                    f"{BACKEND_URL}/{API_PREFIX}/admin/revoke",
+                    json={"user_email_id": revoke_email},
+                    headers=headers,
+                    timeout=45
+                )
+                if res.status_code == 200:
+                    msg = res.json().get("message", "Success")
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    try:
+                        error_message = res.json().get("detail", res.text)
+                    except:
+                        error_message = res.text
+                    st.error(f"Failed: {error_message}")
+            except Exception as e:
+                st.error(f"Request failed: {e}")
+
+
 def main():
     """Main application function"""
     st.markdown(
@@ -926,6 +1020,8 @@ def main():
         st.session_state.page = "chat"
     if st.sidebar.button("📄 View Documents", use_container_width=True):
         st.session_state.page = "documents"
+    if st.sidebar.button("👑 Admin Roles", use_container_width=True):
+        st.session_state.page = "admin_roles"
     if st.sidebar.button("ℹ️ About", use_container_width=True):
         st.session_state.page = "about"
         st.rerun()
@@ -963,6 +1059,8 @@ def main():
         render_chat_page()
     elif st.session_state.page == "documents":
         render_documents_page()
+    elif st.session_state.page == "admin_roles":
+        render_admin_roles_page()
     elif st.session_state.page == "about":
         render_about_page()
 

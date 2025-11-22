@@ -603,6 +603,21 @@ def remove_admin_access(req: UserEmail):
 
         return {"message": f"Admin access revoked from {user_email}"}
 
+@router.get("/admin/list")
+def get_list_of_admins():
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+
+        # 1. Fetch all users where is_admin is 1
+        cursor.execute(
+            "SELECT email_id FROM users WHERE is_admin = 1"
+        )
+        admin_users = cursor.fetchall()
+        admin_emails = [user['email_id'] for user in admin_users]
+        return {
+            "admin_count": len(admin_emails),
+            "admins": admin_emails
+        }
 
 app.include_router(router)
 
