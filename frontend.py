@@ -1,5 +1,6 @@
 import base64
 import streamlit as st
+import pandas as pd
 import os
 import tempfile
 import PyPDF2
@@ -816,6 +817,94 @@ def render_sidebar_logo():
     """, unsafe_allow_html=True)
 
 
+def render_documents_page():
+    """
+    Renders the document review/list page.
+    Assumes a backend endpoint GET /documents exists.
+    """
+    st.markdown('<div class="section-header">📄 Ingested Documents Review</div>', unsafe_allow_html=True)
+
+    # Department selector for filtering
+    filter_department = st.selectbox(
+        "Filter by Department",
+        ["All Departments", "finance", "hr", "legal", "operations"],
+        key="doc_filter_dept"
+    )
+
+    st.markdown("---")
+
+    # ----------------------------------------------------------------------
+    # MOCK DATA RETRIEVAL (Simulating the API call to GET /documents)
+    # ----------------------------------------------------------------------
+
+    # In a real application, you would replace this with a requests.get call:
+    # try:
+    #     headers = {"Authorization": f"Bearer {st.session_state.auth_token}"}
+    #     response = requests.get(f"{BACKEND_URL}/documents", headers=headers, timeout=10)
+    #     response.raise_for_status()
+    #     data = response.json().get("documents", [])
+    # except requests.exceptions.RequestException as e:
+    #     st.error(f"Could not load documents: {e}")
+    #     data = []
+
+    # Mock Data Structure for Demonstration (replace with actual API response parsing)
+    mock_data = [
+        {"id": 1, "filename": "Finance-T&C-Q4-2025.pdf", "department": "finance", "ingestion_date": "2025-11-20 14:30",
+         "status": "Processed"},
+        {"id": 2, "filename": "HR_Leave_Policy_2025.pdf", "department": "hr", "ingestion_date": "2025-11-19 09:15",
+         "status": "Processed"},
+        {"id": 3, "filename": "Legal-Data_Privacy_Addendum.txt", "department": "legal",
+         "ingestion_date": "2025-11-20 18:00", "status": "Processed"},
+        {"id": 4, "filename": "Ops_SOP_V3.pdf", "department": "operations", "ingestion_date": "2025-11-18 11:00",
+         "status": "Processed"},
+        {"id": 5, "filename": "HR_Compensation_Matrix.pdf", "department": "hr", "ingestion_date": "2025-11-21 10:00",
+         "status": "Processed"},
+    ]
+
+    # ----------------------------------------------------------------------
+    # DATA PROCESSING AND DISPLAY
+    # ----------------------------------------------------------------------
+
+    if not mock_data:
+        st.info("No documents have been ingested yet.")
+        return
+
+    df = pd.DataFrame(mock_data)
+
+    # Apply filter
+    if filter_department != "All Departments":
+        df = df[df['department'] == filter_department]
+
+    # Formatting columns for better display
+    df_display = df.rename(columns={
+        "filename": "File Name",
+        "department": "Department",
+        "ingestion_date": "Ingestion Date",
+        "status": "Status"
+    }).drop(columns=["id"]).reset_index(drop=True)  # Drop internal ID
+
+    st.subheader(f"Showing {len(df_display)} Document(s)...")
+
+    # Display the DataFrame as a table
+    st.dataframe(
+        df_display,
+        use_container_width=True,
+        # Customize column display (optional)
+        column_config={
+            "File Name": st.column_config.TextColumn("File Name", help="Name of the ingested file"),
+            "Department": st.column_config.TextColumn("Department", help="Department associated with the policy"),
+            "Ingestion Date": st.column_config.DatetimeColumn("Ingestion Date", help="When the file was processed"),
+            "Status": st.column_config.TextColumn("Status", help="Current processing status")
+        }
+    )
+
+    st.markdown(f"""
+        <p style="font-style: italic; color: #9ca3af; font-size: 0.9rem;">
+            * Data filtered for department: **{filter_department}**
+        </p>
+    """, unsafe_allow_html=True)
+
+
 def main():
     """Main application function"""
     st.markdown(
@@ -835,6 +924,8 @@ def main():
         st.session_state.page = "ingest"
     if st.sidebar.button("💬 Chat with Assistant", use_container_width=True):
         st.session_state.page = "chat"
+    if st.sidebar.button("📄 View Documents", use_container_width=True):
+        st.session_state.page = "documents"
     if st.sidebar.button("ℹ️ About", use_container_width=True):
         st.session_state.page = "about"
         st.rerun()
@@ -870,6 +961,8 @@ def main():
         render_ingest_page()
     elif st.session_state.page == "chat":
         render_chat_page()
+    elif st.session_state.page == "documents":
+        render_documents_page()
     elif st.session_state.page == "about":
         render_about_page()
 
