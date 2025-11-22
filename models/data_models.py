@@ -10,3 +10,6 @@ class User(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class UserEmail(BaseModel):
+    user_email_id: EmailStr
