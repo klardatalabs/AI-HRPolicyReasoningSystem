@@ -164,12 +164,13 @@ def insert_user_to_db(user_obj):
     with get_db_connection() as conn:
         try:
             cursor = conn.cursor()
-            # Check if user already exists
+
+            # 1. Check if user already exists (by email_id)
             cursor.execute("""
                 SELECT id FROM users WHERE email_id = %s
             """, (user_obj.email_id,))
-
             existing_user = cursor.fetchone()
+
             if existing_user:
                 return {
                     "success": False,
@@ -178,30 +179,45 @@ def insert_user_to_db(user_obj):
                     "error_type": "duplicate_email"
                 }
 
-            # Insert new user
+            # 2. Determine if this user should be the first (admin)
+            # Count ALL users in the table
+            cursor.execute("SELECT COUNT(id) FROM users")
+            user_count = cursor.fetchone()[0]
+
+            # If user_count is 0, this is the first user, make them an admin (is_admin=1)
+            is_admin_flag = 1 if user_count == 0 else 0
+
+            # 3. Insert the new user
             cursor.execute("""
-                INSERT INTO users (email_id, pwd_hash)
-                VALUES (%s, %s)
-            """, (user_obj.email_id, user_obj.hashed_password))
+                INSERT INTO users (email_id, pwd_hash, is_admin)
+                VALUES (%s, %s, %s)
+            """, (user_obj.email_id, user_obj.hashed_password, is_admin_flag))
+
             conn.commit()
 
+            # 4. Fetch the last inserted ID
             result = cursor.lastrowid
+
             if result:
                 print("Successfully inserted user with id: ", result)
                 return {
                     "success": True,
                     "message": "User successfully created",
-                    "user_id": result
+                    "user_id": result,
+                    "is_admin": is_admin_flag  # Added for clarity
                 }
             else:
                 print("User insertion completed but no ID returned")
+                # This block is unlikely if conn.commit() was successful and an ID column is auto_increment
                 return {
                     "success": False,
                     "message": "User insertion completed but no ID returned",
                     "user_id": None,
                     "error_type": "no_id_returned"
                 }
+
         except Exception as e:
+            # Ensures any incomplete transaction is cancelled on error
             conn.rollback()
             print("Error in DB insertion: ", str(e))
             return {
