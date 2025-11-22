@@ -32,7 +32,7 @@ from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from models.data_models import (
-    User
+    User, UserEmail
 )
 from models.rate_limiter import rag_app_limiter
 from slowapi.errors import RateLimitExceeded
@@ -466,9 +466,9 @@ app.add_exception_handler(
 )
 
 # define rate limit scopes
-AUTHORIZATION_LIMIT = rag_app_limiter.shared_limit("1/minute", scope="authorization")
-INTERACTION_LIMIT = rag_app_limiter.shared_limit("1/minute", scope="interaction")
-HEALTH_CHECK_LIMIT = rag_app_limiter.shared_limit("10/minute", scope="health")
+AUTHORIZATION_LIMIT = rag_app_limiter.shared_limit("100/minute", scope="authorization")
+INTERACTION_LIMIT = rag_app_limiter.shared_limit("100/minute", scope="interaction")
+HEALTH_CHECK_LIMIT = rag_app_limiter.shared_limit("1000/minute", scope="health")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/token")
 
@@ -534,6 +534,75 @@ def init_captcha(request: Request):
         media_type="image/jpeg",
         headers={"X-Captcha-ID": captcha_id}   # <-- return ID in header
     )
+
+@router.post("/admin/make")
+def add_admin_access(req: UserEmail):
+    user_email = req.user_email_id
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+        # Check user
+        cursor.execute(
+            "SELECT email_id, is_admin FROM users WHERE email_id = %s",
+            (user_email,)
+        )
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User does not exist")
+        # Already admin
+        if user["is_admin"] == 1:
+            return {"message": f"{user_email} is already an admin"}
+        # Update
+        cursor.execute(
+            "UPDATE users SET is_admin = 1 WHERE email_id = %s",
+            (user_email,)
+        )
+        conn.commit()
+        return {"message": f"Admin access granted to {user_email}"}
+
+
+@router.post("/admin/revoke")
+def remove_admin_access(req: UserEmail):
+    user_email = req.user_email_id
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+
+        # 1. Check if user exists + fetch admin status
+        cursor.execute(
+            "SELECT email_id, is_admin FROM users WHERE email_id = %s",
+            (user_email,)
+        )
+        user = cursor.fetchone()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User does not exist")
+
+        # 2. If the user is NOT an admin already → nothing to revoke
+        if user["is_admin"] == 0:
+            return {"message": f"{user_email} is not an admin"}
+
+        # 3. Count total number of admins
+        cursor.execute("SELECT COUNT(*) AS admin_count FROM users WHERE is_admin = 1")
+        result = cursor.fetchone()
+        admin_count = result["admin_count"]
+
+        # 4. If only one admin exists → Reject revocation
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot revoke admin status. No other admins remaining. "
+                       "Please assign another admin before revoking this one."
+            )
+
+        # 5. Safe to revoke
+        cursor.execute(
+            "UPDATE users SET is_admin = 0 WHERE email_id = %s",
+            (user_email,)
+        )
+        conn.commit()
+
+        return {"message": f"Admin access revoked from {user_email}"}
+
 
 app.include_router(router)
 
