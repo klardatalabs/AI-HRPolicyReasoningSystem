@@ -7,7 +7,7 @@ using Retrieval Augmented Generation (RAG) with enterprise security features inc
 - PII redaction
 - Prompt injection protection
 - Output guardrails
-- Comprehensive audit logging
+- Comprehensive audit monitoring
 
 This is a proof-of-concept implementation suitable for demonstration and development.
 """
@@ -431,7 +431,7 @@ Answer:"""
 # ============================================================================
 
 class AuditLogger:
-    """Handles secure audit logging for compliance and monitoring."""
+    """Handles secure audit monitoring for compliance and monitoring."""
 
     def __init__(self, log_path: str = AUDIT_LOG_PATH):
         """Initialize audit logger with log file path."""
@@ -552,7 +552,7 @@ class SecureRAGApp:
             4. Semantic search with department filtering
             5. LLM generation with constrained prompting
             6. Output content filtering
-            7. Comprehensive audit logging
+            7. Comprehensive audit monitoring
             """
             # Step 1: Authenticate user and get permissions
             user = UserManager.get_user(request.user_id)

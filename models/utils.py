@@ -1,7 +1,4 @@
 import os
-import csv
-import urllib
-
 import boto3
 import tempfile
 import requests
@@ -14,12 +11,9 @@ from mysql.connector import Error
 from contextlib import contextmanager
 from passlib.context import CryptContext
 from jose import jwt, JWTError
-import logging
+from monitoring.app_logger import create_logger
 
-from qdrant_client.http.exceptions import UnexpectedResponse
-
-logger = logging.getLogger(__name__)
-logging.basicConfig(level='INFO')
+logger = create_logger()
 
 load_dotenv()
 
@@ -162,7 +156,7 @@ def restore_latest_snapshot_s3(
 
     logger.info(f"[QDRANT RESTORE] Presigned URL generated.")
 
-    # Optional debug logging to ensure presigned URL is correct
+    # Optional debug monitoring to ensure presigned URL is correct
     logger.info(f"[QDRANT RESTORE] Presigned URL: {presigned_url}")
 
     # Step 4: Restore snapshot in Qdrant

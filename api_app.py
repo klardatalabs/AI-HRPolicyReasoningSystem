@@ -4,7 +4,7 @@ import json
 import time
 import hashlib
 import uuid
-import logging
+import monitoring
 import numpy as np
 from enum import Enum
 from fast_captcha import img_captcha
@@ -37,9 +37,9 @@ from models.data_models import (
 )
 from models.rate_limiter import rag_app_limiter
 from slowapi.errors import RateLimitExceeded
+from monitoring.app_logger import create_logger
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(level='INFO')
+logger = create_logger()
 
 # captcha config
 CAPTCHA_STORE = {}
