@@ -1,8 +1,11 @@
-import hashlib
 import os
+import csv
+import urllib
+
+import boto3
 import tempfile
-from dotenv import load_dotenv
 import requests
+from dotenv import load_dotenv
 from datetime import timedelta, datetime
 from fastapi import HTTPException
 from google.cloud import storage
@@ -11,8 +14,12 @@ from mysql.connector import Error
 from contextlib import contextmanager
 from passlib.context import CryptContext
 from jose import jwt, JWTError
+import logging
 
-from models.data_models import User
+from qdrant_client.http.exceptions import UnexpectedResponse
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level='INFO')
 
 load_dotenv()
 
@@ -30,6 +37,161 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 pwd_context = CryptContext(
     schemes=["argon2"], deprecated="auto"
 )
+
+def get_s3_client():
+    """Create and return S3 bucket client + bucket object"""
+    try:
+        s3 = boto3.client(
+            "s3",
+            region_name="eu-north-1"
+        )
+        logger.info("Successfully instantiated S3 client...")
+        return s3
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to initialize S3 client: {str(e)}")
+
+
+def backup_collection_s3(
+        qdrant_client,
+        s3_client,
+        bucket_name: str,
+        collection_name: str,
+        qdrant_host: str, key_prefix: str | None = None):
+    """
+    Create a Qdrant snapshot and upload it to an S3 bucket.
+    """
+    # Step 1: Create snapshot
+    logger.info(f"Creating snapshot for collection: '{collection_name}'...")
+    snapshot_info = qdrant_client.create_snapshot(collection_name=collection_name)
+    snapshot_name = snapshot_info.name
+
+    logger.info(f"Created snapshot: '{snapshot_name}'")
+
+    # Step 2: Build download URL for the snapshot
+    download_url = f"{qdrant_host}/collections/{collection_name}/snapshots/{snapshot_name}"
+
+    # Step 3: Download snapshot to a temp file, then upload to S3
+
+    if key_prefix:  # if prefix provided, save to the specific path
+        key = f"{key_prefix}/{snapshot_name}"
+        logger.info(f"Prefix provided. Saving snapshot to path: '{key}'")
+    else:
+        # else save it to root of the bucket
+        key = f"{snapshot_name}"
+
+    with requests.get(download_url, stream=True) as response:
+        response.raise_for_status()
+
+        with tempfile.NamedTemporaryFile() as tmp_file:
+            # Stream snapshot into local temp file
+            for chunk in response.iter_content(chunk_size=8 * 1024 * 1024):
+                if chunk:
+                    tmp_file.write(chunk)
+
+            tmp_file.flush()
+            tmp_file.seek(0)
+
+            # Upload to S3
+            try:
+                logger.info("Uploading snapshot...")
+                s3_client.upload_fileobj(
+                    tmp_file,
+                    bucket_name,
+                    key,
+                    ExtraArgs={"ContentType": "application/octet-stream"}
+                )
+                logger.info("Successfully uploaded snapshot.")
+            except Exception as e:
+                logger.error("Failed to upload snapshot...")
+                logger.info(str(e))
+                raise HTTPException(status_code=500, detail=f"Failed to upload to S3: {str(e)}")
+
+    return snapshot_name
+
+
+def restore_latest_snapshot_s3(
+        qdrant_client,
+        s3_client,
+        bucket_name: str,
+        collection_name: str,
+        key_prefix: str | None = None):
+    """
+    Restore the latest snapshot for a collection from S3 into Qdrant
+    using a presigned URL so Qdrant can download it directly.
+    """
+
+    # Ensure prefix is safe for AWS
+    prefix = key_prefix or ""   # AWS allows empty prefix
+    logger.info(f"[QDRANT RESTORE] Searching for snapshots in s3://{bucket_name}/{prefix}")
+
+    # List snapshots in S3
+    try:
+        response = s3_client.list_objects_v2(
+            Bucket=bucket_name,
+            Prefix=prefix,
+        )
+    except Exception as e:
+        logger.error(f"[QDRANT RESTORE] Failed to list S3 objects: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed listing S3 snapshots: {str(e)}")
+
+    if "Contents" not in response or not response["Contents"]:
+        logger.warning(f"[QDRANT RESTORE] No snapshots found under prefix '{prefix}'")
+        raise FileNotFoundError("No snapshots found in S3 bucket")
+
+    snapshots = response["Contents"]
+    logger.info(f"[QDRANT RESTORE] Found {len(snapshots)} snapshots in S3")
+
+    # Pick latest object by LastModified timestamp
+    latest_obj = max(snapshots, key=lambda obj: obj["LastModified"])
+    snapshot_key = latest_obj["Key"]   # DO NOT modify — full path already included
+
+    logger.info(f"[QDRANT RESTORE] Latest snapshot selected: {snapshot_key}")
+
+    # Step 3: Generate presigned URL for Qdrant to fetch
+    logger.info("[QDRANT RESTORE] Generating presigned S3 URL for snapshot download...")
+
+    try:
+        presigned_url = s3_client.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={"Bucket": bucket_name, "Key": snapshot_key},
+            ExpiresIn=3600 * 6,  # 6 hours to avoid expiration mid-restore
+        )
+    except Exception as e:
+        logger.error(f"[QDRANT RESTORE] Failed generating presigned URL: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed generating presigned URL: {str(e)}")
+
+    logger.info(f"[QDRANT RESTORE] Presigned URL generated.")
+
+    # Optional debug logging to ensure presigned URL is correct
+    logger.info(f"[QDRANT RESTORE] Presigned URL: {presigned_url}")
+
+    # Step 4: Restore snapshot in Qdrant
+    logger.info(f"[QDRANT RESTORE] Beginning restore for collection '{collection_name}'...")
+    try:
+        qdrant_client.recover_snapshot(
+            collection_name=collection_name,
+            location=presigned_url,
+            wait=True,
+            priority="snapshot",
+        )
+    except Exception as e:
+        # collection not found exception
+        error_msg = str(e).lower()
+        if "not found" in error_msg or "collection" in error_msg:
+            logger.error(f"[QDRANT RESTORE] Qdrant reports missing collection '{collection_name}': {str(e)}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Collection '{collection_name}' does not exist in Qdrant"
+            )
+        # any other exception
+        logger.exception(f"[QDRANT RESTORE] Failed during Qdrant snapshot restore: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed restoring snapshot: {str(e)}")
+
+    logger.info(
+        f"[QDRANT RESTORE] Restore complete: snapshot '{snapshot_key}' applied to '{collection_name}'."
+    )
+    return snapshot_key
+
 
 def backup_collection_gcs(qdrant_client, bucket, collection_name: str, qdrant_host: str):
     """

@@ -16,7 +16,8 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 
 from models.utils import (
     backup_collection_gcs, restore_latest_snapshot_gcs, get_db_connection, insert_user_to_db,
-    create_access_token, decode_access_token, authenticate_user
+    create_access_token, decode_access_token, authenticate_user,
+    get_s3_client, backup_collection_s3, restore_latest_snapshot_s3
 )
 from fastapi.responses import StreamingResponse
 from sentence_transformers import SentenceTransformer
@@ -770,14 +771,24 @@ async def get_llm_backend_type():
 async def backup_collection(req: BackupRequest):
     """Backup Qdrant collection to GCS"""
     try:
-        bucket = get_gcs_bucket()
+        # bucket = get_gcs_bucket()
+        s3_client = get_s3_client()     # s3 backup
 
         # Pass qdrant_host (e.g., from config or env)
-        snapshot_name = backup_collection_gcs(
+        # snapshot_name = backup_collection_gcs(
+        #     qdrant_client=qdrant_client,
+        #     bucket=bucket,
+        #     collection_name=req.collection_name,
+        #     qdrant_host=f"http://{QDRANT_HOST}:{QDRANT_PORT}"  # <-- define in settings/env
+        # )
+        # Pass qdrant_host (e.g., from config or env)
+        snapshot_name = backup_collection_s3(
             qdrant_client=qdrant_client,
-            bucket=bucket,
+            s3_client=s3_client,
+            bucket_name="klardatalabs-s3-bucket",
             collection_name=req.collection_name,
-            qdrant_host=f"http://{QDRANT_HOST}:{QDRANT_PORT}"  # <-- define in settings/env
+            qdrant_host=f"http://{QDRANT_HOST}:{QDRANT_PORT}",  # <-- define in settings/env
+            key_prefix="klar-policy-rag/snapshots"      # do not change this!
         )
 
         write_audit({
@@ -790,7 +801,7 @@ async def backup_collection(req: BackupRequest):
         return {
             "status": "success",
             "snapshot_name": snapshot_name,
-            "message": f"Collection {req.collection_name} backed up successfully"
+            "message": f"Collection '{req.collection_name}' backed up successfully."
         }
 
     except Exception as e:
@@ -806,17 +817,27 @@ async def backup_collection(req: BackupRequest):
 @app.post("/restore_latest_snapshot")
 def restore_vector_collection(req: RestoreRequest):
     try:
-        bucket = get_gcs_bucket()
-        snapshot_name = restore_latest_snapshot_gcs(
+        s3_client = get_s3_client()
+        # bucket = get_gcs_bucket()
+        # snapshot_name = restore_latest_snapshot_gcs(
+        #     qdrant_client=qdrant_client,
+        #     bucket=bucket,
+        #     collection_name=req.collection_name
+        # )
+        snapshot_name = restore_latest_snapshot_s3(
             qdrant_client=qdrant_client,
-            bucket=bucket,
-            collection_name=req.collection_name
+            s3_client=s3_client,
+            bucket_name="klardatalabs-s3-bucket",
+            collection_name=req.collection_name,
+            key_prefix="klar-policy-rag/snapshots"      # do not change this!
         )
         return {
             "status": "success",
             "message": f"Collection '{req.collection_name}' restored from snapshot '{snapshot_name}'"
         }
     except Exception as e:
+        logger.exception(f"Failed to restore required snapshot: ")
+        # logger.info(str(e))
         raise HTTPException(status_code=500, detail=f"Restore task failed: {str(e)}")
 
 

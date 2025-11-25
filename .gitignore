@@ -6,3 +6,4 @@ create-directory.sh
 keys
 localhost+1-key.pem
 localhost+1.pem
+.env
