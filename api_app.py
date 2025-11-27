@@ -620,6 +620,27 @@ def get_list_of_admins():
             "admins": admin_emails
         }
 
+@router.get("/admin/check")
+def check_admin_status(token: str = Depends(oauth2_scheme)):
+    user = decode_access_token(token)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="User not authorized."
+        )
+    user_email = user["email_id"]
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT is_admin FROM users WHERE email_id = %s",
+            (user_email,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="User does not exist")
+
+        return {"is_admin": bool(row["is_admin"])}
+
 app.include_router(router)
 
 
