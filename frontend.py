@@ -537,6 +537,18 @@ def login_page():
                 token_data = res.json()
                 st.session_state.auth_token = token_data["access_token"]
                 st.session_state.username = email
+                try:
+                    admin_resp = requests.get(
+                        f"{BACKEND_URL}/{API_PREFIX}/admin/check",
+                        headers={"Authorization": f"Bearer {st.session_state.auth_token}"},
+                        timeout=30
+                    )
+                    if admin_resp.status_code == 200:
+                        st.session_state.is_admin = admin_resp.json().get("is_admin", False)
+                    else:
+                        st.session_state.is_admin = False
+                except:
+                    st.session_state.is_admin = False
 
                 # Cleanup captcha
                 st.session_state.pop("login_captcha_id", None)
@@ -1006,64 +1018,87 @@ def main():
         unsafe_allow_html=True
     )
 
+    # Ensure session keys exist
+    if "page" not in st.session_state:
+        st.session_state.page = "chat"
+    if "is_admin" not in st.session_state:
+        st.session_state.is_admin = False
+
     # -----------------------------------------------
-    # START: Top Sidebar Content (Logo and Navigation)
+    # START: Top Sidebar Content (Logo + Navigation)
     # -----------------------------------------------
-    st.sidebar.markdown('<div class="sidebar-top-section">', unsafe_allow_html=True)  # Start TOP flex container
+    st.sidebar.markdown('<div class="sidebar-top-section">', unsafe_allow_html=True)
 
     render_sidebar_logo()
 
-    # Navigation buttons
-    if st.sidebar.button("📤 Ingest Documents", use_container_width=True):
-        st.session_state.page = "ingest"
+    # Always-visible navigation
     if st.sidebar.button("💬 Chat with Assistant", use_container_width=True):
         st.session_state.page = "chat"
-    if st.sidebar.button("📄 View Documents", use_container_width=True):
-        st.session_state.page = "documents"
-    if st.sidebar.button("👑 Admin Roles", use_container_width=True):
-        st.session_state.page = "admin_roles"
+
     if st.sidebar.button("ℹ️ About", use_container_width=True):
         st.session_state.page = "about"
         st.rerun()
 
-    st.sidebar.markdown('</div>', unsafe_allow_html=True)  # End TOP flex container
+    # Admin-only navigation
+    if st.session_state.is_admin:
+        if st.sidebar.button("📤 Ingest Documents", use_container_width=True):
+            st.session_state.page = "ingest"
+
+        if st.sidebar.button("📄 View Documents", use_container_width=True):
+            st.session_state.page = "documents"
+
+        if st.sidebar.button("👑 Admin Roles", use_container_width=True):
+            st.session_state.page = "admin_roles"
+
+    st.sidebar.markdown('</div>', unsafe_allow_html=True)
     # -----------------------------------------------
     # END: Top Sidebar Content
     # -----------------------------------------------
 
     # -----------------------------------------------
-    # START: Bottom Sidebar Content (User Info and Logout)
+    # START: Bottom Sidebar Content (User Info + Logout)
     # -----------------------------------------------
-    st.sidebar.markdown('<div class="sidebar-bottom-section">', unsafe_allow_html=True)  # Start BOTTOM container
+    st.sidebar.markdown('<div class="sidebar-bottom-section">', unsafe_allow_html=True)
 
-    # User Info
-    st.sidebar.markdown(
-        '<div class="sidebar-user-section">', unsafe_allow_html=True
-    )
+    st.sidebar.markdown('<div class="sidebar-user-section">', unsafe_allow_html=True)
     st.sidebar.write(f"👋 Logged in as **{st.session_state.username}**")
-    # Logout Button
-    if st.sidebar.button("Logout", use_container_width=True):  # Ensure width is full
+
+    if st.sidebar.button("Logout", use_container_width=True):
         logout()
 
-    st.sidebar.markdown('</div>', unsafe_allow_html=True)  # End BOTTOM container
+    st.sidebar.markdown('</div>', unsafe_allow_html=True)
     # -----------------------------------------------
     # END: Bottom Sidebar Content
     # -----------------------------------------------
 
-    if "page" not in st.session_state:
-        st.session_state.page = "ingest"
-
+    # -----------------------------------------------
+    # ROUTING (with admin protection)
+    # -----------------------------------------------
     if st.session_state.page == "ingest":
-        render_ingest_page()
+        if st.session_state.is_admin:
+            render_ingest_page()
+        else:
+            st.error("⛔ You do not have permission to access this page.")
+
+    elif st.session_state.page == "documents":
+        if st.session_state.is_admin:
+            render_documents_page()
+        else:
+            st.error("⛔ You do not have permission to access this page.")
+
+    elif st.session_state.page == "admin_roles":
+        if st.session_state.is_admin:
+            render_admin_roles_page()
+        else:
+            st.error("⛔ You do not have permission to access this page.")
+
     elif st.session_state.page == "chat":
         render_chat_page()
-    elif st.session_state.page == "documents":
-        render_documents_page()
-    elif st.session_state.page == "admin_roles":
-        render_admin_roles_page()
+
     elif st.session_state.page == "about":
         render_about_page()
 
+    # Footer
     st.markdown("""
     <div class="footer">
         <p style="font-size: 0.8rem; color: #9ca3af;">
