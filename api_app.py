@@ -17,7 +17,7 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 from models.utils import (
     backup_collection_gcs, restore_latest_snapshot_gcs, get_db_connection, insert_user_to_db,
     create_access_token, decode_access_token, authenticate_user,
-    get_s3_client, backup_collection_s3, restore_latest_snapshot_s3
+    get_s3_client, backup_collection_s3, restore_latest_snapshot_s3, upload_file_to_s3
 )
 from fastapi.responses import StreamingResponse
 from sentence_transformers import SentenceTransformer
@@ -720,38 +720,70 @@ def chat(request: Request, req: ChatReq, token: str = Depends(oauth2_scheme)):
 @app.post("/ingest")
 @INTERACTION_LIMIT
 async def ingest(
-    request: Request,   # for rate limiting
+    request: Request,
     file: UploadFile = File(...),
     department: str = Form(...),
     token: str = Depends(oauth2_scheme)
 ):
+    # ----------------------------
+    # Authentication
+    # ----------------------------
     user = decode_access_token(token)
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"User not authorized"
+            status_code=401,
+            detail="User not authorized"
         )
-    path = os.path.join(UPLOAD_DIR, file.filename)
-    with open(path, "wb") as f:
+    # ----------------------------
+    # S3 Upload (Streaming)
+    # ----------------------------
+    s3_bucket = "klardatalabs-s3-bucket"
+    s3_key = f"klar-policy-rag/uploads/{department}/{file.filename}"
+
+    upload_success, s3_uri = upload_file_to_s3(
+        file_obj=file.file,
+        bucket_name=s3_bucket,
+        key=s3_key
+    )
+    if not upload_success:
+        raise HTTPException(
+            status_code=500,
+            detail=f"S3 upload failed: {s3_uri}"
+        )
+    # ----------------------------
+    # OPTIONAL: Save locally if your ingest pipeline requires it
+    # If not needed, remove this entire block.
+    # ----------------------------
+    # Reset stream before writing locally
+    file.file.seek(0)
+    local_path = os.path.join(UPLOAD_DIR, file.filename)
+    with open(local_path, "wb") as f:
         f.write(await file.read())
-    ingest_file(path, department)
+
+    ingest_file(local_path, department)
+    # Delete the file after ingestion
+    os.remove(local_path)
+
+    # Determine file extension type
     file_name = file.filename
-    file_extension = ""
     ext = file_name.split(".")[-1].lower()
-    if ext == "txt":
-        file_extension = "text"
-    elif ext == "pdf":
-        file_extension = "pdf"
-    print(file_name)
-    print(file_extension)
+    file_extension = "text" if ext == "txt" else "pdf" if ext == "pdf" else ext
+
+    # Insert ingestion event into DB
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            insert into ingestion_events (file_name, file_type)
-            values (%s, %s)
-        """, (file_name, file_extension))
+            INSERT INTO ingestion_events (file_name, file_type, uri)
+            VALUES (%s, %s, %s)
+        """, (file_name, file_extension, s3_uri))
         conn.commit()
-    return {"status": "ok", "file": file.filename}
+
+    # Response
+    return {
+        "status": "ok",
+        "file": file.filename,
+        "uri": s3_uri
+    }
 
 
 @app.get("/")

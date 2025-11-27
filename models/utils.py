@@ -45,6 +45,33 @@ def get_s3_client():
         raise HTTPException(status_code=500, detail=f"Failed to initialize S3 client: {str(e)}")
 
 
+def upload_file_to_s3(file_obj, bucket_name: str, key: str):
+    """
+    Upload a file to S3 using streaming upload.
+    Returns a stable internal S3 URI (not public).
+    """
+    try:
+        s3 = get_s3_client()
+
+        # Ensure file stream is at the beginning
+        if hasattr(file_obj, "seek"):
+            file_obj.seek(0)
+
+        # Streaming upload
+        s3.upload_fileobj(
+            Fileobj=file_obj,
+            Bucket=bucket_name,
+            Key=key
+        )
+
+        logger.info(f"Successfully uploaded to s3://{bucket_name}/{key}")
+        return True, f"s3://{bucket_name}/{key}"
+
+    except Exception as e:
+        logger.error(f"S3 upload failed: {str(e)}")
+        return False, str(e)
+
+
 def backup_collection_s3(
         qdrant_client,
         s3_client,
