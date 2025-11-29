@@ -587,6 +587,9 @@ def logout():
     st.session_state.auth_token = None
     st.session_state.username = None
     st.session_state.show_register = False
+    # Clear chat history to avoid leaking previous user's messages
+    if "chat_history" in st.session_state:
+        st.session_state.pop("chat_history", None)
     st.rerun()
 ### --- NEW CODE END ---
 
