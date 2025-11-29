@@ -18,11 +18,11 @@ services:
     volumes:
       - tca-qdrant-data:/qdrant/storage
     restart: on-failure
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6333/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+#    healthcheck:
+#      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6333/healthz"]
+#      interval: 10s
+#      timeout: 5s
+#      retries: 5
 
   mysql:
     image: mysql:8.0
@@ -70,13 +70,11 @@ services:
       mysql:
         condition: service_healthy
       vector-db:
-        condition: service_healthy
+        condition: service_started
       ollama:
         condition: service_started
-
     ports:
       - "8002:8002"
-
     restart: on-failure
 
   frontend:
@@ -85,8 +83,7 @@ services:
     environment:
       BACKEND_URL: http://backend:8002
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     volumes:
       - ./data/uploads:/app/data/uploads
     ports:

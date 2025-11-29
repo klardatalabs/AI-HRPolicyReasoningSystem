@@ -4,7 +4,6 @@ import json
 import time
 import hashlib
 import uuid
-import monitoring
 import numpy as np
 from enum import Enum
 from fast_captcha import img_captcha
