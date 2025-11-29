@@ -62,4 +62,7 @@ docker compose -f docker-compose-prod.yml up -d --remove-orphans
 echo "=== Deployment Complete ==="
 echo "Visit your frontend at: http://YOUR_EC2_PUBLIC_IP:8501"
 echo "SSH access & private services remain secure."
+
+# SSH tunnel for locally testing out (temporary access)
+# ssh -i <KEY PAIR.pem> -N -L <CONTAINER PORT>:localhost:<LOCAL PORT> ubuntu@<PUBLIC IP>
 ~~~
