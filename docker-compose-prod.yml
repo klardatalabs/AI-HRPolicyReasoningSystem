@@ -1,14 +1,14 @@
 version: "3.9"
 
 services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: tca-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - tca-ollama-data:/root/.ollama
-    restart: on-failure
+#  ollama:
+#    image: ollama/ollama:latest
+#    container_name: tca-ollama
+#    ports:
+#      - "11434:11434"
+#    volumes:
+#      - tca-ollama-data:/root/.ollama
+#    restart: on-failure
 
   vector-db:
     image: qdrant/qdrant:latest
@@ -71,8 +71,8 @@ services:
         condition: service_healthy
       vector-db:
         condition: service_started
-      ollama:
-        condition: service_started
+#      ollama:
+#        condition: service_started
     ports:
       - "8002:8002"
     restart: on-failure
@@ -91,6 +91,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  tca-ollama-data:
+#  tca-ollama-data:
   tca-qdrant-data:
   tca-mysql-data:
