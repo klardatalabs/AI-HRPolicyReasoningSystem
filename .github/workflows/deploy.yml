@@ -1,0 +1,59 @@
+name: CI/CD Deployment to EC2
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # -------------------------------
+      # Checkout code
+      # -------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # -------------------------------
+      # Build & Push Docker Images
+      # -------------------------------
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build backend image
+        run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/myapp-backend:latest ./backend
+
+      - name: Build frontend image
+        run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/myapp-frontend:latest ./frontend
+
+      - name: Push backend image
+        run: docker push ${{ secrets.DOCEKRHUB_USERNAME }}/myapp-backend:latest
+
+      - name: Push frontend image
+        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/myapp-frontend:latest
+
+      # -------------------------------
+      # Deploy to EC2 via SSH
+      # -------------------------------
+      - name: Add SSH key
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY }}" > key.pem
+          chmod 600 key.pem
+
+      - name: Deploy on EC2 (compose pull + up)
+        run: |
+          ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
+          cd tca
+          # Stop only backend and frontend services
+          docker compose -f docker-compose-prod.yml stop tca-backend tca-frontend
+          
+          # Pull new images for backend and frontend only
+          docker compose -f docker-compose-prod.yml pull backend frontend
+          
+          # Start backend and frontend services (this will recreate them)
+          docker compose -f docker-compose-prod.yml up -d --no-deps backend frontend
+          EOF
