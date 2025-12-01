@@ -49,6 +49,10 @@ services:
     image: rishavm/tca-backend:latest
     container_name: tca-backend
     environment:
+      # Pass host env vars directly
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
       QDRANT_HOST: vector-db
       QDRANT_PORT: 6333
       OLLAMA_HOST: ollama
