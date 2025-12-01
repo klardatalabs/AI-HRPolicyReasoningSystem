@@ -45,6 +45,7 @@ services:
       retries: 10
       start_period: 60s   # MySQL takes time to warm up
 
+
   backend:
     image: rishavm/tca-backend:latest
     container_name: tca-backend
