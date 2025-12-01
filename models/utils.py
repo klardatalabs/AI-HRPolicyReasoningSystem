@@ -52,7 +52,7 @@ def upload_file_to_s3(file_obj, bucket_name: str, key: str):
     """
     try:
         s3 = get_s3_client()
-        logger.info("Received S3 client: ", s3)
+        logger.info(f"Received S3 client: {s3}")
 
         # Ensure file stream is at the beginning
         if hasattr(file_obj, "seek"):
